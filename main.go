@@ -7,13 +7,12 @@ import "encoding/json"
 import "net/url"
 
 type Configuration struct {
-    TargetURL         string
+    TargetURL string
 }
 
 func main() {
 
 	args := os.Args[1:]
-
 	if len(args) != 4 {
 		fmt.Fprintf(os.Stderr, "error: wrong number of arguments\n")
 		fmt.Fprintf(os.Stderr, "Usage: %v hostname service-description state pluginOutput\n", os.Args[0])
@@ -33,9 +32,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: environment variable %v not set\n", configFilenameEnvVarName)
 		os.Exit(1)
 	}
-	//configFilename := "./config/config.dev.json" // TODO
-	// dat, err := ioutil.ReadFile(configFilename)
-    // fmt.Print(string(dat))
 	file, err := os.Open(configFilename)
 	if err != nil { 
 		fmt.Fprintf(os.Stderr, "error: could not open config file %v: %v\n", configFilename, err)
@@ -48,9 +44,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// post to targetURL
 	resp, err := http.PostForm(configuration.TargetURL, url.Values{
 		"hostname": {hostname}, "serviceDescription": {serviceDescription}, "state": {state}, "pluginOutput": {pluginOutput}})
-
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
