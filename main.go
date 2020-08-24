@@ -70,7 +70,7 @@ func main() {
 
 	clientid := "" // empty client id, should result in a stateless client //"ocxp_sender"+strconv.Itoa(time.Now().Second())
 	topic := Topic
-	qos := 0
+	qos := 1 // NOTE: we use qos=1, which does NOT prevent duplicates, but is faster than qos=2; see https://www.hivemq.com/blog/mqtt-essentials-part-6-mqtt-quality-of-service-levels/
 	retained := false
 
 	connOpts := MQTT.NewClientOptions().AddBroker(configuration.MQTTServerURL).SetClientID(clientid).SetCleanSession(true)
