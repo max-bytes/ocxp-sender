@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"time"
 	"encoding/json"
-	MQTT "github.com/eclipse/paho.mqtt.golang"
 	"crypto/tls"
-	"github.com/influxdata/line-protocol"
 	"regexp"
+	MQTT "github.com/eclipse/paho.mqtt.golang"
+	"github.com/influxdata/line-protocol"
 )
 
 const Topic = "naemon/metrics"
@@ -68,27 +68,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	clientid := "" // empty client id, should result in a stateless client //"ocxp_sender"+strconv.Itoa(time.Now().Second())
-	topic := Topic
-	qos := 1 // NOTE: we use qos=1, which does NOT prevent duplicates, but is faster than qos=2; see https://www.hivemq.com/blog/mqtt-essentials-part-6-mqtt-quality-of-service-levels/
-	retained := false
-
-	connOpts := MQTT.NewClientOptions().AddBroker(configuration.MQTTServerURL).SetClientID(clientid).SetCleanSession(true)
-	tlsConfig := &tls.Config{InsecureSkipVerify: true, ClientAuth: tls.NoClientCert}
-	connOpts.SetTLSConfig(tlsConfig)
-
-	client := MQTT.NewClient(connOpts)
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		fmt.Println(token.Error())
-		os.Exit(1)
-	}
-
 	var b bytes.Buffer
 	encoder := protocol.NewEncoder(&b)
 
+	valueCount := 0
 	for singlePerfdata := range parsePerfData(perfData) {
 
-		var fields = []*protocol.Field{
+		var fields = []*protocol.Field {
 			&(protocol.Field { Key: "value", Value: singlePerfdata.Value }),
 		}
 		if singlePerfdata.Warn != nil {
@@ -105,10 +91,14 @@ func main() {
 		}
 
 		// TODO: add lots of tags
-		// TODO: add UOM, if present
 		var tags = []*protocol.Tag{
 			&(protocol.Tag { Key: "host", Value: hostname }),
 			&(protocol.Tag { Key: "servicedesc", Value: serviceDescription }),
+		}
+
+		// add UOM, if present
+		if singlePerfdata.UOM != nil {
+			tags = append(tags, &(protocol.Tag { Key: "uom", Value: *singlePerfdata.UOM }))
 		}
 
 		metric := Metric {
@@ -120,15 +110,34 @@ func main() {
 		_, err = encoder.Encode(metric)
 		if err != nil {
 			fmt.Println(err)
-			os.Exit(1)
+		} else {
+			valueCount++
 		}
 	}
 
-	 if token := client.Publish(topic, byte(qos), retained, b.String()); token.Wait() && token.Error() != nil {
-		fmt.Println(token.Error())
-		os.Exit(1)
+	// only publish if there are actually metrics/perfdata
+	if valueCount > 0 {
+		clientid := "" // empty client id, should result in a stateless client //"ocxp_sender"+strconv.Itoa(time.Now().Second())
+		topic := Topic
+		qos := 1 // NOTE: we use qos=1, which does NOT prevent duplicates, but is faster than qos=2; see https://www.hivemq.com/blog/mqtt-essentials-part-6-mqtt-quality-of-service-levels/
+		retained := false
+
+		connOpts := MQTT.NewClientOptions().AddBroker(configuration.MQTTServerURL).SetClientID(clientid).SetCleanSession(true)
+		tlsConfig := &tls.Config{InsecureSkipVerify: true, ClientAuth: tls.NoClientCert}
+		connOpts.SetTLSConfig(tlsConfig)
+
+		client := MQTT.NewClient(connOpts)
+		if token := client.Connect(); token.Wait() && token.Error() != nil {
+			fmt.Println(token.Error())
+			os.Exit(1)
+		}
+
+		if token := client.Publish(topic, byte(qos), retained, b.String()); token.Wait() && token.Error() != nil {
+			fmt.Println(token.Error())
+			os.Exit(1)
+		}
+		client.Disconnect(100)
 	}
-	client.Disconnect(100)
 }
 
 type PerfData struct {
