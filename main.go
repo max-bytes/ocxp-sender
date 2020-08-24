@@ -9,12 +9,11 @@ import (
 	"encoding/json"
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 	"crypto/tls"
-	//"github.com/DCSO/fluxline" // TODO: remove
 	"github.com/influxdata/line-protocol"
 	"regexp"
 )
 
-const Topic = "naemon/service/state"
+const Topic = "naemon/metrics"
 
 type Configuration struct {
     MQTTServerURL string
@@ -41,22 +40,14 @@ func (m Metric) FieldList() []*protocol.Field {
 func main() {
 
 	args := os.Args[1:]
-	if len(args) != 4 {
+	if len(args) != 3 {
 		fmt.Fprintf(os.Stderr, "error: wrong number of arguments\n")
-		fmt.Fprintf(os.Stderr, "Usage: %v hostname service-description state perfData\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %v hostname service-description perfData\n", os.Args[0])
 		os.Exit(1)
 	}
 	hostname := args[0]
 	serviceDescription := args[1]
-	stateStr := args[2]
-	perfData := args[3]
-	state, err := strconv.Atoi(stateStr)
-	if err != nil {
-		fmt.Printf("Could not parse state \"%v\" into integer\n", stateStr)
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
+	perfData := args[2]
 	// read config
 	var configuration Configuration
 	configFilenameEnvVarName := "OCXP_SENDER_CONFIGFILE"
@@ -92,9 +83,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	_ = state
-
-	
 	var b bytes.Buffer
 	encoder := protocol.NewEncoder(&b)
 
@@ -116,6 +104,7 @@ func main() {
 			fields = append(fields, &(protocol.Field { Key: "max", Value: *singlePerfdata.Max }))
 		}
 
+		// TODO: add lots of tags
 		var tags = []*protocol.Tag{
 			&(protocol.Tag { Key: "host", Value: hostname }),
 			&(protocol.Tag { Key: "servicedesc", Value: serviceDescription }),
@@ -134,9 +123,6 @@ func main() {
 		}
 	}
 
-	
-	fmt.Print(b.String())
-	 
 	 if token := client.Publish(topic, byte(qos), retained, b.String()); token.Wait() && token.Error() != nil {
 		fmt.Println(token.Error())
 		os.Exit(1)
