@@ -94,6 +94,7 @@ func main() {
 		var tags = []*protocol.Tag{
 			&(protocol.Tag { Key: "host", Value: hostname }),
 			&(protocol.Tag { Key: "servicedesc", Value: serviceDescription }),
+			&(protocol.Tag { Key: "label", Value: singlePerfdata.Key }),
 		}
 
 		// add UOM, if present
@@ -102,7 +103,7 @@ func main() {
 		}
 
 		metric := Metric {
-			name: singlePerfdata.Key,
+			name: "value",
 			fields: fields,
 			tags: tags,
 		}
@@ -114,6 +115,8 @@ func main() {
 			valueCount++
 		}
 	}
+
+	// TODO: add state as its own metric(?), with the state encoding as an integer (-1 to 2 or 0 to 3?)
 
 	// only publish if there are actually metrics/perfdata
 	if valueCount > 0 {
