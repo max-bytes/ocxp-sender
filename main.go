@@ -1,13 +1,41 @@
 package main
 
-import "fmt"
-import "net/http"
-import "os"
-import "encoding/json"
-import "net/url"
+import (
+	"fmt"
+	"os"
+	"bytes"
+	"strconv"
+	"time"
+	"encoding/json"
+	MQTT "github.com/eclipse/paho.mqtt.golang"
+	"crypto/tls"
+	//"github.com/DCSO/fluxline" // TODO: remove
+	"github.com/influxdata/line-protocol"
+	"regexp"
+)
+
+const Topic = "naemon/service/state"
 
 type Configuration struct {
-    TargetURL string
+    MQTTServerURL string
+}
+
+type Metric struct {
+	name string
+	tags []*protocol.Tag
+	fields []*protocol.Field
+}
+func (m Metric) Time() time.Time {
+    return time.Now()
+}
+func (m Metric) Name() string {
+    return m.name
+}
+func (m Metric) TagList() []*protocol.Tag {
+    return m.tags
+}
+func (m Metric) FieldList() []*protocol.Field {
+    return m.fields
 }
 
 func main() {
@@ -15,14 +43,19 @@ func main() {
 	args := os.Args[1:]
 	if len(args) != 4 {
 		fmt.Fprintf(os.Stderr, "error: wrong number of arguments\n")
-		fmt.Fprintf(os.Stderr, "Usage: %v hostname service-description state pluginOutput\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %v hostname service-description state perfData\n", os.Args[0])
 		os.Exit(1)
 	}
-
 	hostname := args[0]
 	serviceDescription := args[1]
-	state := args[2]
-	pluginOutput := args[3]
+	stateStr := args[2]
+	perfData := args[3]
+	state, err := strconv.Atoi(stateStr)
+	if err != nil {
+		fmt.Printf("Could not parse state \"%v\" into integer\n", stateStr)
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	// read config
 	var configuration Configuration
@@ -44,16 +77,134 @@ func main() {
 		os.Exit(1)
 	}
 
-	// post to targetURL
-	resp, err := http.PostForm(configuration.TargetURL, url.Values{
-		"hostname": {hostname}, "serviceDescription": {serviceDescription}, "state": {state}, "pluginOutput": {pluginOutput}})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	clientid := "" // empty client id, should result in a stateless client //"ocxp_sender"+strconv.Itoa(time.Now().Second())
+	topic := Topic
+	qos := 0
+	retained := false
+
+	connOpts := MQTT.NewClientOptions().AddBroker(configuration.MQTTServerURL).SetClientID(clientid).SetCleanSession(true)
+	tlsConfig := &tls.Config{InsecureSkipVerify: true, ClientAuth: tls.NoClientCert}
+	connOpts.SetTLSConfig(tlsConfig)
+
+	client := MQTT.NewClient(connOpts)
+	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		fmt.Println(token.Error())
 		os.Exit(1)
 	}
-	if resp.StatusCode != 200 {
-		fmt.Fprintf(os.Stderr, "error: %v\n", resp.Status)
+
+	_ = state
+
+	
+	var b bytes.Buffer
+	encoder := protocol.NewEncoder(&b)
+
+	for singlePerfdata := range parsePerfData(perfData) {
+
+		var fields = []*protocol.Field{
+			&(protocol.Field { Key: "value", Value: singlePerfdata.Value }),
+		}
+		if singlePerfdata.Warn != nil {
+			fields = append(fields, &(protocol.Field { Key: "warn", Value: *singlePerfdata.Warn }))
+		}
+		if singlePerfdata.Crit != nil {
+			fields = append(fields, &(protocol.Field { Key: "crit", Value: *singlePerfdata.Crit }))
+		}
+		if singlePerfdata.Min != nil {
+			fields = append(fields, &(protocol.Field { Key: "min", Value: *singlePerfdata.Min }))
+		}
+		if singlePerfdata.Max != nil {
+			fields = append(fields, &(protocol.Field { Key: "max", Value: *singlePerfdata.Max }))
+		}
+
+		var tags = []*protocol.Tag{
+			&(protocol.Tag { Key: "host", Value: hostname }),
+			&(protocol.Tag { Key: "servicedesc", Value: serviceDescription }),
+		}
+
+		metric := Metric {
+			name: singlePerfdata.Key,
+			fields: fields,
+			tags: tags,
+		}
+
+		_, err = encoder.Encode(metric)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+	}
+
+	
+	fmt.Print(b.String())
+	 
+	 if token := client.Publish(topic, byte(qos), retained, b.String()); token.Wait() && token.Error() != nil {
+		fmt.Println(token.Error())
 		os.Exit(1)
 	}
+	client.Disconnect(0)
 }
 
+type PerfData struct {
+	Key string
+	Value float64
+	UOM *string
+	Warn   *float64
+	Crit   *float64
+	Min   *float64
+	Max   *float64
+}
+
+// partly taken from https://github.com/Griesbacher/nagflux/blob/ea877539bc49ed67e9a5e35b8a127b1ff4cadaad/collector/spoolfile/nagiosSpoolfileWorker.go
+var regexPerformanceLabel = regexp.MustCompile(`([^=]+)=(U|[\d\.,\-]+)([\pL\/%]*);?([\d\.,\-:~@]+)?;?([\d\.,\-:~@]+)?;?([\d\.,\-]+)?;?([\d\.,\-]+)?;?\s*`)
+func parsePerfData(str string) <-chan PerfData {
+	ch := make(chan PerfData)
+	go func() {
+		perfSlice := regexPerformanceLabel.FindAllStringSubmatch(str, -1)
+
+		for _, value := range perfSlice {
+
+			v, err := strconv.ParseFloat(value[2], 64)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			var uom *string = nil
+			if value[3] != "" {
+				uom = &(value[3])
+			}
+			var warn *float64 = nil
+			warnF, err := strconv.ParseFloat(value[4], 64)
+			if err == nil {
+				warn = &warnF
+			}
+			var crit *float64 = nil
+			critF, err := strconv.ParseFloat(value[5], 64)
+			if err == nil {
+				crit = &critF
+			}
+			var min *float64 = nil
+			minF, err := strconv.ParseFloat(value[6], 64)
+			if err == nil {
+				min = &minF
+			}
+			var max *float64 = nil
+			maxF, err := strconv.ParseFloat(value[7], 64)
+			if err == nil {
+				max = &maxF
+			}
+			perf := PerfData{
+				Key: value[1],
+				Value: v,
+				UOM: uom,
+				Warn: warn,
+				Crit: crit,
+				Min: min,
+				Max: max,
+			}
+			ch <- perf
+		}
+		close(ch)
+	}()
+
+	return ch
+}

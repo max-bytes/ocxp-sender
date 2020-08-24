@@ -1,3 +1,3 @@
 {
-    "TargetURL": "http://metrics-receiver.localhost/api/ocxp/v1/write"
+    "MQTTServerURL": "tcp://127.0.0.1:1883"
 }
