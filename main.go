@@ -120,7 +120,7 @@ func main() {
 
 	// only publish if there are actually metrics/perfdata
 	if valueCount > 0 {
-		clientid := "" // empty client id, should result in a stateless client //"ocxp_sender"+strconv.Itoa(time.Now().Second())
+		clientid := "" // empty client id, should result in a stateless client
 		topic := Topic
 		qos := 1 // NOTE: we use qos=1, which does NOT prevent duplicates, but is faster than qos=2; see https://www.hivemq.com/blog/mqtt-essentials-part-6-mqtt-quality-of-service-levels/
 		retained := false
@@ -147,10 +147,10 @@ type PerfData struct {
 	Key string
 	Value float64
 	UOM *string
-	Warn   *float64
-	Crit   *float64
-	Min   *float64
-	Max   *float64
+	Warn *float64
+	Crit *float64
+	Min *float64
+	Max *float64
 }
 
 // partly taken from https://github.com/Griesbacher/nagflux/blob/ea877539bc49ed67e9a5e35b8a127b1ff4cadaad/collector/spoolfile/nagiosSpoolfileWorker.go
@@ -161,7 +161,6 @@ func parsePerfData(str string) <-chan PerfData {
 		perfSlice := regexPerformanceLabel.FindAllStringSubmatch(str, -1)
 
 		for _, value := range perfSlice {
-
 			v, err := strconv.ParseFloat(value[2], 64)
 			if err != nil {
 				fmt.Println(err)
