@@ -92,7 +92,7 @@ func main() {
 	// TODO: add lots of tags
 	metric := perfData2metric(PerfData{
 		Key: "state",
-		Value: state,
+		Value: float64(state), // in influxDB, values are floats, convert from integer to float64
 	}, map[string]string {
 		"host": hostname,
 		"servicedesc": serviceDescription,
