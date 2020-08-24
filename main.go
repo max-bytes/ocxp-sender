@@ -105,6 +105,7 @@ func main() {
 		}
 
 		// TODO: add lots of tags
+		// TODO: add UOM, if present
 		var tags = []*protocol.Tag{
 			&(protocol.Tag { Key: "host", Value: hostname }),
 			&(protocol.Tag { Key: "servicedesc", Value: serviceDescription }),
@@ -127,7 +128,7 @@ func main() {
 		fmt.Println(token.Error())
 		os.Exit(1)
 	}
-	client.Disconnect(0)
+	client.Disconnect(100)
 }
 
 type PerfData struct {
