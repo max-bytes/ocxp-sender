@@ -40,14 +40,20 @@ func (m Metric) FieldList() []*protocol.Field {
 func main() {
 
 	args := os.Args[1:]
-	if len(args) != 3 {
+	if len(args) != 4 {
 		fmt.Fprintf(os.Stderr, "error: wrong number of arguments\n")
-		fmt.Fprintf(os.Stderr, "Usage: %v hostname service-description perfData\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %v hostname service-description check-state-id perfData\n", os.Args[0])
 		os.Exit(1)
 	}
 	hostname := args[0]
 	serviceDescription := args[1]
-	perfData := args[2]
+	stateStr := args[2]
+	state, err := strconv.Atoi(stateStr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Could not parse passed check-state-id \"%v\" to integer", stateStr)
+		os.Exit(1)
+	}
+	perfData := args[3]
 	// read config
 	var configuration Configuration
 	configFilenameEnvVarName := "OCXP_SENDER_CONFIGFILE"
@@ -71,55 +77,36 @@ func main() {
 	var b bytes.Buffer
 	encoder := protocol.NewEncoder(&b)
 
-	valueCount := 0
-	for singlePerfdata := range parsePerfData(perfData) {
-
-		var fields = []*protocol.Field {
-			&(protocol.Field { Key: "value", Value: singlePerfdata.Value }),
-		}
-		if singlePerfdata.Warn != nil {
-			fields = append(fields, &(protocol.Field { Key: "warn", Value: *singlePerfdata.Warn }))
-		}
-		if singlePerfdata.Crit != nil {
-			fields = append(fields, &(protocol.Field { Key: "crit", Value: *singlePerfdata.Crit }))
-		}
-		if singlePerfdata.Min != nil {
-			fields = append(fields, &(protocol.Field { Key: "min", Value: *singlePerfdata.Min }))
-		}
-		if singlePerfdata.Max != nil {
-			fields = append(fields, &(protocol.Field { Key: "max", Value: *singlePerfdata.Max }))
-		}
-
-		// TODO: add lots of tags
-		var tags = []*protocol.Tag{
-			&(protocol.Tag { Key: "host", Value: hostname }),
-			&(protocol.Tag { Key: "servicedesc", Value: serviceDescription }),
-			&(protocol.Tag { Key: "label", Value: singlePerfdata.Key }),
-		}
-
-		// add UOM, if present
-		if singlePerfdata.UOM != nil {
-			tags = append(tags, &(protocol.Tag { Key: "uom", Value: *singlePerfdata.UOM }))
-		}
-
-		metric := Metric {
-			name: "value",
-			fields: fields,
-			tags: tags,
-		}
-
+	for pd := range parsePerfData(perfData) {
+		metric := perfData2metric(pd, map[string]string {
+			"host": hostname,
+			"servicedesc": serviceDescription,
+		})
+		
 		_, err = encoder.Encode(metric)
 		if err != nil {
 			fmt.Println(err)
-		} else {
-			valueCount++
 		}
+	}
+
+	// TODO: add lots of tags
+	metric := perfData2metric(PerfData{
+		Key: "state",
+		Value: state,
+	}, map[string]string {
+		"host": hostname,
+		"servicedesc": serviceDescription,
+	})
+	
+	_, err = encoder.Encode(metric)
+	if err != nil {
+		fmt.Println(err)
 	}
 
 	// TODO: add state as its own metric(?), with the state encoding as an integer (-1 to 2 or 0 to 3?)
 
 	// only publish if there are actually metrics/perfdata
-	if valueCount > 0 {
+	if b.Len() > 0 {
 		clientid := "" // empty client id, should result in a stateless client
 		topic := Topic
 		qos := 1 // NOTE: we use qos=1, which does NOT prevent duplicates, but is faster than qos=2; see https://www.hivemq.com/blog/mqtt-essentials-part-6-mqtt-quality-of-service-levels/
@@ -143,9 +130,47 @@ func main() {
 	}
 }
 
+func perfData2metric(pd PerfData, addedTags map[string]string) Metric {
+	var fields = []*protocol.Field {
+		&(protocol.Field { Key: "value", Value: pd.Value }),
+	}
+	if pd.Warn != nil {
+		fields = append(fields, &(protocol.Field { Key: "warn", Value: *pd.Warn }))
+	}
+	if pd.Crit != nil {
+		fields = append(fields, &(protocol.Field { Key: "crit", Value: *pd.Crit }))
+	}
+	if pd.Min != nil {
+		fields = append(fields, &(protocol.Field { Key: "min", Value: *pd.Min }))
+	}
+	if pd.Max != nil {
+		fields = append(fields, &(protocol.Field { Key: "max", Value: *pd.Max }))
+	}
+
+	var tags = []*protocol.Tag {
+		&(protocol.Tag { Key: "label", Value: pd.Key }),
+	}
+	for key, value := range addedTags {
+		tags = append(tags, &(protocol.Tag { Key: key, Value: value }))
+	}
+
+	// add UOM, if present
+	if pd.UOM != nil {
+		tags = append(tags, &(protocol.Tag { Key: "uom", Value: *pd.UOM }))
+	}
+
+	metric := Metric {
+		name: "value",
+		fields: fields,
+		tags: tags,
+	}
+
+	return metric
+}
+
 type PerfData struct {
 	Key string
-	Value float64
+	Value interface{}
 	UOM *string
 	Warn *float64
 	Crit *float64
