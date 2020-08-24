@@ -78,7 +78,7 @@ func main() {
 	encoder := protocol.NewEncoder(&b)
 
 	for pd := range parsePerfData(perfData) {
-		metric := perfData2metric(pd, map[string]string {
+		metric := perfData2metric("value", pd, map[string]string {
 			"host": hostname,
 			"servicedesc": serviceDescription,
 		})
@@ -89,13 +89,13 @@ func main() {
 		}
 	}
 
-	// TODO: add lots of tags
-	metric := perfData2metric(PerfData{
+	
+	metric := perfData2metric("state", PerfData{
 		Key: "state",
-		Value: float64(state), // in influxDB, values are floats, convert from integer to float64
+		Value: state,
 	}, map[string]string {
 		"host": hostname,
-		"servicedesc": serviceDescription,
+		"servicedesc": serviceDescription, // TODO: add lots of tags
 	})
 	
 	_, err = encoder.Encode(metric)
@@ -130,7 +130,7 @@ func main() {
 	}
 }
 
-func perfData2metric(pd PerfData, addedTags map[string]string) Metric {
+func perfData2metric(metricName string, pd PerfData, addedTags map[string]string) Metric {
 	var fields = []*protocol.Field {
 		&(protocol.Field { Key: "value", Value: pd.Value }),
 	}
@@ -160,7 +160,7 @@ func perfData2metric(pd PerfData, addedTags map[string]string) Metric {
 	}
 
 	metric := Metric {
-		name: "value",
+		name: metricName,
 		fields: fields,
 		tags: tags,
 	}
