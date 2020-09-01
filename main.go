@@ -2,21 +2,23 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"bytes"
 	"strconv"
 	"time"
 	"encoding/json"
-	"crypto/tls"
+	// "crypto/tls"
 	"regexp"
-	MQTT "github.com/eclipse/paho.mqtt.golang"
+	//MQTT "github.com/eclipse/paho.mqtt.golang"
+	"github.com/streadway/amqp"
 	"github.com/influxdata/line-protocol"
 )
 
 const Topic = "naemon/metrics"
 
 type Configuration struct {
-    MQTTServerURL string
+    AMQP_URL string
 }
 
 type Metric struct {
@@ -37,6 +39,12 @@ func (m Metric) FieldList() []*protocol.Field {
     return m.fields
 }
 
+func failOnError(err error, msg string) {
+	if err != nil {
+	  log.Fatalf("%s: %s", msg, err)
+	}
+  }
+
 func main() {
 
 	args := os.Args[1:]
@@ -50,7 +58,7 @@ func main() {
 	stateStr := args[2]
 	state, err := strconv.Atoi(stateStr)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Could not parse passed check-state-id \"%v\" to integer", stateStr)
+		fmt.Fprintf(os.Stderr, "Could not parse passed check-state-id \"%v\" to integer", stateStr)
 		os.Exit(1)
 	}
 	perfData := args[3]
@@ -89,7 +97,7 @@ func main() {
 		}
 	}
 
-	
+	// add state as its own metric(?), with the state encoding as an integer (0 to 3)
 	metric := perfData2metric("state", PerfData{
 		Key: "state",
 		Value: state,
@@ -103,30 +111,39 @@ func main() {
 		fmt.Println(err)
 	}
 
-	// TODO: add state as its own metric(?), with the state encoding as an integer (-1 to 2 or 0 to 3?)
-
 	// only publish if there are actually metrics/perfdata
 	if b.Len() > 0 {
-		clientid := "" // empty client id, should result in a stateless client
-		topic := Topic
-		qos := 1 // NOTE: we use qos=1, which does NOT prevent duplicates, but is faster than qos=2; see https://www.hivemq.com/blog/mqtt-essentials-part-6-mqtt-quality-of-service-levels/
-		retained := false
+		fmt.Println(b.String());
 
-		connOpts := MQTT.NewClientOptions().AddBroker(configuration.MQTTServerURL).SetClientID(clientid).SetCleanSession(true)
-		tlsConfig := &tls.Config{InsecureSkipVerify: true, ClientAuth: tls.NoClientCert}
-		connOpts.SetTLSConfig(tlsConfig)
+		connection, err := amqp.Dial(configuration.AMQP_URL)
+		failOnError(err, "Failed to connect to RabbitMQ")
 
-		client := MQTT.NewClient(connOpts)
-		if token := client.Connect(); token.Wait() && token.Error() != nil {
-			fmt.Println(token.Error())
-			os.Exit(1)
-		}
+		channel, err := connection.Channel()
+		failOnError(err, "Failed to open a channel")
 
-		if token := client.Publish(topic, byte(qos), retained, b.String()); token.Wait() && token.Error() != nil {
-			fmt.Println(token.Error())
-			os.Exit(1)
-		}
-		client.Disconnect(100)
+		queue, err := channel.QueueDeclare(
+			"naemon", // name
+			true,   // durable
+			false,   // delete when unused
+			false,   // exclusive
+			false,   // no-wait
+			nil,     // arguments
+		)
+		failOnError(err, "Failed to declare a queue")
+
+		err = channel.Publish(
+			"",     // exchange
+			queue.Name, // routing key
+			false,  // mandatory
+			false,  // immediate
+			amqp.Publishing {
+			  ContentType: "text/plain",
+			  Body:        b.Bytes(),
+			})
+		failOnError(err, "Failed to publish a message")
+
+		defer channel.Close()
+		defer connection.Close()
 	}
 }
 
