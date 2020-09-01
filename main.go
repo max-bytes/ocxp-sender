@@ -15,7 +15,7 @@ import (
 	"github.com/influxdata/line-protocol"
 )
 
-const Topic = "naemon/metrics"
+const QueueName = "naemon"
 
 type Configuration struct {
     AMQP_URL string
@@ -122,7 +122,7 @@ func main() {
 		failOnError(err, "Failed to open a channel")
 
 		queue, err := channel.QueueDeclare(
-			"naemon", // name
+			QueueName, // name
 			true,   // durable
 			false,   // delete when unused
 			false,   // exclusive
@@ -139,6 +139,7 @@ func main() {
 			amqp.Publishing {
 			  ContentType: "text/plain",
 			  Body:        b.Bytes(),
+			  DeliveryMode: 2,
 			})
 		failOnError(err, "Failed to publish a message")
 
