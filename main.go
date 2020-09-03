@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
+	// "os"
 	"bytes"
 	"strconv"
 	"time"
-	"encoding/json"
+	// "encoding/json"
 	"strings"
 	// "crypto/tls"
 	flag "github.com/spf13/pflag"
@@ -19,9 +19,9 @@ import (
 
 const QueueName = "naemon"
 
-type Configuration struct {
-    AMQP_URL string
-}
+// type Configuration struct {
+//     AMQP_URL string
+// }
 
 type Metric struct {
 	name string
@@ -81,11 +81,13 @@ func main() {
 	var state int
 	var variableFlags variableFlags
 	var perfData string
+	var amqpURL string
 	flag.VarP(&variableFlags, "var", "v", "variables in the form \"name=value\" (multiple -v allowed); get passed as tags")
 	flag.StringVarP(&hostname, "hostname", "h", "", "hostname")
 	flag.StringVarP(&serviceDescription, "desc", "d", "", "service description")
 	flag.IntVarP(&state, "state", "s", 0, "state")
 	flag.StringVarP(&perfData, "perfdata", "p", "", "Performance data")
+	flag.StringVarP(&amqpURL, "amqp-url", "u", "amqp://localhost:5672", "URL of the AMQP (e.g. RabbitMQ) server to send the data to")
 	flag.Parse()
 	
 	if !isFlagPassed("hostname") { fail("hostname not set") }
@@ -101,26 +103,6 @@ func main() {
         inputTags[x[0]] = x[1]
     }
 	
-	// read config
-	var configuration Configuration
-	configFilenameEnvVarName := "OCXP_SENDER_CONFIGFILE"
-	configFilename := os.Getenv(configFilenameEnvVarName)
-	if configFilename == "" {
-		fmt.Fprintf(os.Stderr, "error: environment variable %v not set\n", configFilenameEnvVarName)
-		os.Exit(1)
-	}
-	file, err := os.Open(configFilename)
-	if err != nil { 
-		fmt.Fprintf(os.Stderr, "error: could not open config file %v: %v\n", configFilename, err)
-		os.Exit(1)
-	}
-	decoder := json.NewDecoder(file) 
-	err = decoder.Decode(&configuration) 
-	if err != nil { 
-		fmt.Fprintf(os.Stderr, "error: could not decode config file %v: %v\n", configFilename, err)
-		os.Exit(1)
-	}
-
 	var b bytes.Buffer
 	encoder := protocol.NewEncoder(&b)
 
@@ -135,7 +117,7 @@ func main() {
 
 	for pd := range parsePerfData(perfData) {
 		metric := perfData2metric("value", pd, tags)
-		_, err = encoder.Encode(metric)
+		_, err := encoder.Encode(metric)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -147,7 +129,7 @@ func main() {
 		Value: state,
 	}, tags)
 	
-	_, err = encoder.Encode(metric)
+	_, err := encoder.Encode(metric)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -156,7 +138,7 @@ func main() {
 	if b.Len() > 0 {
 		fmt.Println(b.String());
 
-		connection, err := amqp.Dial(configuration.AMQP_URL)
+		connection, err := amqp.Dial(amqpURL)
 		failOnError(err, "Failed to connect to RabbitMQ")
 
 		channel, err := connection.Channel()
