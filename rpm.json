@@ -1,0 +1,15 @@
+{
+  "name": "ocxp-sender",
+  "summary": "Naemon ocxp handler that sends metrics to an AMQP server",
+  "description": "Naemon ocxp handler that sends metrics to an AMQP server",
+  "license": "LICENSE",
+  "url": "https://www.mhx.at/gitlab/landscape/ocxp-sender",
+  "files": [
+    {
+      "from": "bin/ocxp-sender",
+      "to": "%{_bindir}/",
+      "base": "bin/",
+      "type": ""
+    }
+  ]
+}
