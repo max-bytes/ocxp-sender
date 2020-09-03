@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"time"
 	"encoding/json"
+	"strings"
 	// "crypto/tls"
+	flag "github.com/spf13/pflag"
 	"regexp"
 	//MQTT "github.com/eclipse/paho.mqtt.golang"
 	"github.com/streadway/amqp"
@@ -41,27 +43,64 @@ func (m Metric) FieldList() []*protocol.Field {
 
 func failOnError(err error, msg string) {
 	if err != nil {
-	  log.Fatalf("%s: %s", msg, err)
+		log.Fatalf("%s: %s", msg, err)
 	}
-  }
+}
+
+func fail(msg string) {
+	log.Fatalf("%s", msg)
+}
+
+type variableFlags []string
+
+func (i *variableFlags) String() string {
+	return strings.Join(*i, ",")
+}
+
+func (i *variableFlags) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+func (i *variableFlags) Type() string {
+	return "string"
+}
+
+func isFlagPassed(name string) bool {
+    found := false
+    flag.Visit(func(f *flag.Flag) {
+        if f.Name == name {
+            found = true
+        }
+    })
+    return found
+}
 
 func main() {
+	var hostname string
+	var serviceDescription string
+	var state int
+	var variableFlags variableFlags
+	var perfData string
+	flag.VarP(&variableFlags, "var", "v", "variables in the form \"name=value\" (multiple -v allowed); get passed as tags")
+	flag.StringVarP(&hostname, "hostname", "h", "", "hostname")
+	flag.StringVarP(&serviceDescription, "desc", "d", "", "service description")
+	flag.IntVarP(&state, "state", "s", 0, "state")
+	flag.StringVarP(&perfData, "perfdata", "p", "", "Performance data")
+	flag.Parse()
+	
+	if !isFlagPassed("hostname") { fail("hostname not set") }
+	if !isFlagPassed("desc") { fail("service description not set") }
+	if !isFlagPassed("state") { fail("state not set") }
+	if !isFlagPassed("perfdata") { fail("Performance data not set") }
 
-	args := os.Args[1:]
-	if len(args) != 4 {
-		fmt.Fprintf(os.Stderr, "error: wrong number of arguments\n")
-		fmt.Fprintf(os.Stderr, "Usage: %v hostname service-description check-state-id perfData\n", os.Args[0])
-		os.Exit(1)
-	}
-	hostname := args[0]
-	serviceDescription := args[1]
-	stateStr := args[2]
-	state, err := strconv.Atoi(stateStr)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Could not parse passed check-state-id \"%v\" to integer", stateStr)
-		os.Exit(1)
-	}
-	perfData := args[3]
+	// create tags from variables
+    inputTags := make(map[string]string)
+    for _, item := range variableFlags {
+		x := strings.SplitN(item, "=", 2)
+		if (len(x) < 2) { fail(fmt.Sprintf("variable %v could not be parsed into name=value", item)) }
+        inputTags[x[0]] = x[1]
+    }
+	
 	// read config
 	var configuration Configuration
 	configFilenameEnvVarName := "OCXP_SENDER_CONFIGFILE"
@@ -85,26 +124,28 @@ func main() {
 	var b bytes.Buffer
 	encoder := protocol.NewEncoder(&b)
 
+	tags := map[string]string {
+		"host": hostname,
+		"servicedesc": serviceDescription,
+	}
+	// add input tags
+	for k, v := range inputTags {
+		tags[k] = v
+	}
+
 	for pd := range parsePerfData(perfData) {
-		metric := perfData2metric("value", pd, map[string]string {
-			"host": hostname,
-			"servicedesc": serviceDescription,
-		})
-		
+		metric := perfData2metric("value", pd, tags)
 		_, err = encoder.Encode(metric)
 		if err != nil {
 			fmt.Println(err)
 		}
 	}
 
-	// add state as its own metric(?), with the state encoding as an integer (0 to 3)
+	// add state as its own metric(?), with the state encoded as an integer (0 to 3)
 	metric := perfData2metric("state", PerfData{
 		Key: "state",
 		Value: state,
-	}, map[string]string {
-		"host": hostname,
-		"servicedesc": serviceDescription, // TODO: add lots of tags
-	})
+	}, tags)
 	
 	_, err = encoder.Encode(metric)
 	if err != nil {
