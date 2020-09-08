@@ -3,25 +3,17 @@ package main
 import (
 	"fmt"
 	"log"
-	// "os"
 	"bytes"
 	"strconv"
 	"time"
-	// "encoding/json"
 	"strings"
-	// "crypto/tls"
 	flag "github.com/spf13/pflag"
 	"regexp"
-	//MQTT "github.com/eclipse/paho.mqtt.golang"
 	"github.com/streadway/amqp"
 	"github.com/influxdata/line-protocol"
 )
 
 const QueueName = "naemon"
-
-// type Configuration struct {
-//     AMQP_URL string
-// }
 
 type Metric struct {
 	name string
