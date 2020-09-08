@@ -14,10 +14,8 @@ build:
     - echo $CI_COMMIT_TAG
 #    - GOOS=linux GOARCH=amd64 go build -o bin/ocxp-sender
 #    - go-bin-rpm generate -o ocxp-sender.rpm --version 1.0.0 --arch amd64
-  only:
-    - tags
   rules:
-    - if $CI_COMMIT_TAG =~/^v/
+    - if: $CI_COMMIT_TAG =~/^v/
       when: manual
     - when: never
 
