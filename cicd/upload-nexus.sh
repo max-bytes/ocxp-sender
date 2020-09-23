@@ -19,7 +19,7 @@ if [ -z "$NEXUS_USER" ] || [ -z "$NEXUS_PASSWORD" ] || [ -z "$NEXUS_BASEURL" ] |
 fi
 
 sourcefile=$1
-targetfile=$RPM_NAME-$CI_COMMIT_TAG-$CI_PIPELINE_ID
+targetfile=${RPM_NAME}-${CI_COMMIT_TAG}-${CI_PIPELINE_ID}.rpm
 
 if [ -z "$sourcefile" ]; then
   echo "no sourcefile given..."
@@ -30,6 +30,8 @@ if [ -z "$targetfile" ]; then
   echo "targetfile empty"
   exit 1
 fi
+
+find . -type f -ls
 
 echo "uploading $sourcefile to $NEXUS_BASEURL/repository/$NEXUS_REPONAME/$NEXUS_REPOPATH/$targetfile"
 
