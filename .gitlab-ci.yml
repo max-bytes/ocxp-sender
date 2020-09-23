@@ -1,5 +1,6 @@
 stages:
  - build
+ - deploy
 
 variables:
   DOCKER_DRIVER: overlay2
@@ -33,6 +34,7 @@ build:
 
 deploy_mhx_testing:
 #  variables:
+  stage: deploy
   dependencies:
     - build
   script:
