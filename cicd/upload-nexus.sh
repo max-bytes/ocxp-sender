@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# TODO: integrate into upload image
+
 if [ -z "$NEXUS_USER" ] || [ -z "$NEXUS_PASSWORD" ] || [ -z "$NEXUS_BASEURL" ] || [ -z "$NEXUS_REPONAME" ] || [ -z "$NEXUS_REPOPATH" ] || [ -z "$RPM_NAME" ] || [ -z "$CI_COMMIT_TAG" ] || [ -z "$CI_PIPELINE_ID" ]; then
   echo "some variables are missing bailing out..."
   echo ""

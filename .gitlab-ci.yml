@@ -33,6 +33,8 @@ build:
     expire_in: 10 weeks
 
 deploy_mhx_testing:
+  #image: curlimages/curl:7.72.0
+  image: curlimages/curl:latest
   variables:
     NEXUS_REPONAME: "yum-mhx-testing-hosted"
     NEXUS_REPOPATH: "metrics"
