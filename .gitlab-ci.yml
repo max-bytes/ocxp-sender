@@ -1,5 +1,6 @@
 stages:
  - build
+ - package
  - deploy
 
 variables:
@@ -18,7 +19,25 @@ build:
   script:
     - echo "Building version $CI_COMMIT_TAG"
     - GOOS=linux GOARCH=amd64 go build -o bin/ocxp-sender
-    - go-bin-rpm generate -o ocxp-sender.rpm --version $CI_COMMIT_TAG --arch amd64
+
+  rules:
+    # regex for semver taken from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+    - if: $CI_COMMIT_TAG =~/^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
+      when: on_success
+    - when: never
+
+  artifacts:
+    paths:
+      - bin/ocxp-sender
+    expire_in: 10 weeks
+
+package_rpm:
+  image: docker-registry.mhx.at/infra-docker/container-images/go-build:1.0.0-latest
+  stage: build
+  services:
+    - docker:19.03.8-dind
+  script:
+    - go-bin-rpm generate -o ocxp-sender.rpm --version $CI_COMMIT_TAG-$CI_PIPELINE_ID --arch amd64
     - ls -lah ocxp-sender.rpm
 
   rules:
@@ -32,13 +51,14 @@ build:
       - ocxp-sender.rpm
     expire_in: 10 weeks
 
-deploy_mhx_testing:
+deploy_mhx_testing_rhel7_x86_64:
   #image: curlimages/curl:7.72.0
   image: curlimages/curl:latest
   variables:
     NEXUS_REPONAME: "yum-mhx-testing-hosted"
-    NEXUS_REPOPATH: "metrics"
+    NEXUS_REPOPATH: "rhel7"
     RPM_NAME: "ocxp-sender"
+    RPM_ARCH: "x86_64"
 
   stage: deploy
   dependencies:

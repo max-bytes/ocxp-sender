@@ -2,7 +2,7 @@
 
 # TODO: integrate into upload image
 
-if [ -z "$NEXUS_USER" ] || [ -z "$NEXUS_PASSWORD" ] || [ -z "$NEXUS_BASEURL" ] || [ -z "$NEXUS_REPONAME" ] || [ -z "$NEXUS_REPOPATH" ] || [ -z "$RPM_NAME" ] || [ -z "$CI_COMMIT_TAG" ] || [ -z "$CI_PIPELINE_ID" ]; then
+if [ -z "$NEXUS_USER" ] || [ -z "$NEXUS_PASSWORD" ] || [ -z "$NEXUS_BASEURL" ] || [ -z "$NEXUS_REPONAME" ] || [ -z "$NEXUS_REPOPATH" ] || [ -z "$RPM_NAME" ] || [ -z "$RPM_ARCH" ] || [ -z "$CI_COMMIT_TAG" ] || [ -z "$CI_PIPELINE_ID" ]; then
   echo "some variables are missing bailing out..."
   echo ""
   echo "NEXUS_USER"
@@ -11,6 +11,7 @@ if [ -z "$NEXUS_USER" ] || [ -z "$NEXUS_PASSWORD" ] || [ -z "$NEXUS_BASEURL" ] |
   echo "NEXUS_REPONAME"
   echo "NEXUS_REPOPATH"
   echo "RPM_NAME"
+  echo "RPM_ARCH"
   echo "CI_COMMIT_TAG"
   echo "CI_PIPELINE_ID"
   echo ""
@@ -19,7 +20,7 @@ if [ -z "$NEXUS_USER" ] || [ -z "$NEXUS_PASSWORD" ] || [ -z "$NEXUS_BASEURL" ] |
 fi
 
 sourcefile=$1
-targetfile=${RPM_NAME}-${CI_COMMIT_TAG}-${CI_PIPELINE_ID}.rpm
+targetfile=${RPM_NAME}-${CI_COMMIT_TAG}-${CI_PIPELINE_ID}.${RPM_ARCH}.rpm
 
 if [ -z "$sourcefile" ]; then
   echo "no sourcefile given..."
