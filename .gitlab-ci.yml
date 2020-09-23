@@ -33,12 +33,16 @@ build:
     expire_in: 10 weeks
 
 deploy_mhx_testing:
-#  variables:
+  variables:
+    NEXUS_REPONAME: "yum-mhx-testing-hosted"
+    NEXUS_REPOPATH: "metrics"
+    RPM_NAME: "ocxp-sender"
+
   stage: deploy
   dependencies:
     - build
   script:
-    - find . -type f
+    - sh cicd/upload-nexus.sh
 
   rules:
     # regex for semver taken from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
