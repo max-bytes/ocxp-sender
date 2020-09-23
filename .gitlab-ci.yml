@@ -42,7 +42,7 @@ deploy_mhx_testing:
   dependencies:
     - build
   script:
-    - sh cicd/upload-nexus.sh
+    - sh cicd/upload-nexus.sh ocxp-sender.rpm
 
   rules:
     # regex for semver taken from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
