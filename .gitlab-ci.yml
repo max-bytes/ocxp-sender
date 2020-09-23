@@ -33,7 +33,7 @@ build:
 
 package_rpm:
   image: docker-registry.mhx.at/infra-docker/container-images/go-build:1.0.0-latest
-  stage: build
+  stage: package
   services:
     - docker:19.03.8-dind
   script:
@@ -62,7 +62,7 @@ deploy_mhx_testing_rhel7_x86_64:
 
   stage: deploy
   dependencies:
-    - build
+    - package_rpm
   script:
     - sh cicd/upload-nexus.sh ocxp-sender.rpm
 
