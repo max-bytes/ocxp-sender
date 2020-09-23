@@ -10,12 +10,6 @@ variables:
   #NEXUS_PASSWORD: "yoursecretsShouldNotBePlacedHere"
   NEXUS_BASEURL: "https://repo.mhx.at"
 
-rules:
-  # regex for semver taken from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
-  - if: $CI_COMMIT_TAG =~/^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
-    when: on_success
-  - when: never
-
 build:
   image: docker-registry.mhx.at/infra-docker/container-images/go-build:1.0.0-latest
   stage: build
@@ -26,6 +20,12 @@ build:
     - GOOS=linux GOARCH=amd64 go build -o bin/ocxp-sender
     - go-bin-rpm generate -o ocxp-sender.rpm --version $CI_COMMIT_TAG --arch amd64
     - ls -lah ocxp-sender.rpm
+
+  rules:
+    # regex for semver taken from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+    - if: $CI_COMMIT_TAG =~/^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
+      when: on_success
+    - when: never
 
   artifacts:
     paths:
