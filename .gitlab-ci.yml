@@ -14,8 +14,7 @@ variables:
 build:
   image: docker-registry.mhx.at/infra-docker/container-images/go-build:1.0.0-latest
   stage: build
-  services:
-    - docker:19.03.8-dind
+
   script:
     - echo "Building version $CI_COMMIT_TAG"
     - GOOS=linux GOARCH=amd64 go build -o bin/ocxp-sender
@@ -34,8 +33,6 @@ build:
 package_rpm:
   image: docker-registry.mhx.at/infra-docker/container-images/go-build:1.0.0-latest
   stage: package
-  services:
-    - docker:19.03.8-dind
   dependencies:
     - build
   script:
@@ -55,7 +52,6 @@ package_rpm:
     expire_in: 10 weeks
 
 deploy_mhx_testing_rhel7_x86_64:
-  #image: curlimages/curl:7.72.0
   image: curlimages/curl:latest
   variables:
     NEXUS_REPONAME: "yum-mhx-testing-hosted"

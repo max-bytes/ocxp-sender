@@ -32,8 +32,6 @@ if [ -z "$targetfile" ]; then
   exit 1
 fi
 
-find . -type f -ls
-
 echo "uploading $sourcefile to $NEXUS_BASEURL/repository/$NEXUS_REPONAME/$NEXUS_REPOPATH/$targetfile"
 
 curl -v -u "$NEXUS_USER:$NEXUS_PASSWORD" --upload-file $1 $NEXUS_BASEURL/repository/$NEXUS_REPONAME/$NEXUS_REPOPATH/$targetfile
