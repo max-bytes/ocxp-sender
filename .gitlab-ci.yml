@@ -72,6 +72,7 @@ package-rpm:
       when: manual
     - when: never
 
+# variant MHx
 dply-mhx-testing-rhel7-x86_64:
   extends: .deploy-generic-rpm
   stage: deploy-testing
@@ -86,6 +87,44 @@ dply-mhx-stable-rhel7-x86_64:
   stage: deploy-stable
   variables:
     NEXUS_REPONAME: "yum-mhx-stable-hosted"
+    NEXUS_REPOPATH: "rhel7"
+    RPM_NAME: "ocxp-sender"
+    RPM_ARCH: "x86_64"
+
+# variant stockstreet
+dply-stockstreet-testing-rhel7-x86_64:
+  extends: .deploy-generic-rpm
+  stage: deploy-testing
+  variables:
+    NEXUS_REPONAME: "yum-stockstreet-testing-hosted"
+    NEXUS_REPOPATH: "rhel7"
+    RPM_NAME: "ocxp-sender"
+    RPM_ARCH: "x86_64"
+
+dply-stockstreet-stable-rhel7-x86_64:
+  extends: .deploy-generic-rpm
+  stage: deploy-stable
+  variables:
+    NEXUS_REPONAME: "yum-stockstreet-stable-hosted"
+    NEXUS_REPOPATH: "rhel7"
+    RPM_NAME: "ocxp-sender"
+    RPM_ARCH: "x86_64"
+
+# tsa stockstreet
+dply-tsa-testing-rhel7-x86_64:
+  extends: .deploy-generic-rpm
+  stage: deploy-testing
+  variables:
+    NEXUS_REPONAME: "yum-tsa-testing-hosted"
+    NEXUS_REPOPATH: "rhel7"
+    RPM_NAME: "ocxp-sender"
+    RPM_ARCH: "x86_64"
+
+dply-tsa-stable-rhel7-x86_64:
+  extends: .deploy-generic-rpm
+  stage: deploy-stable
+  variables:
+    NEXUS_REPONAME: "yum-tsa-stable-hosted"
     NEXUS_REPOPATH: "rhel7"
     RPM_NAME: "ocxp-sender"
     RPM_ARCH: "x86_64"
