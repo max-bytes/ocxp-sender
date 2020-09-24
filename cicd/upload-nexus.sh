@@ -34,4 +34,6 @@ fi
 
 echo "uploading $sourcefile to $NEXUS_BASEURL/repository/$NEXUS_REPONAME/$NEXUS_REPOPATH/$targetfile"
 
-curl -v -u "$NEXUS_USER:$NEXUS_PASSWORD" --upload-file $1 $NEXUS_BASEURL/repository/$NEXUS_REPONAME/$NEXUS_REPOPATH/$targetfile
+curl -v --fail --show-error -u --fail --show-error"$NEXUS_USER:$NEXUS_PASSWORD" --upload-file $1 $NEXUS_BASEURL/repository/$NEXUS_REPONAME/$NEXUS_REPOPATH/$targetfile
+
+exit $?
