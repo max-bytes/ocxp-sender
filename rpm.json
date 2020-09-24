@@ -1,9 +1,10 @@
 {
   "name": "ocxp-sender",
-  "summary": "Naemon ocxp handler that sends metrics to an AMQP server",
-  "description": "Naemon ocxp handler that sends metrics to an AMQP server",
+  "release": "!release!",
+  "summary": "Nagios ocxp handler that sends metrics to an AMQP server",
+  "description": "Nagios ocxp handler that sends metrics to an AMQP server",
   "license": "LICENSE",
-  "url": "https://www.mhx.at/gitlab/landscape/ocxp-sender",
+  "url": "https://www.mhx.at/landscape/metrics",
   "files": [
     {
       "from": "bin/ocxp-sender",

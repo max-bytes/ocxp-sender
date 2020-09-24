@@ -36,8 +36,11 @@ package_rpm:
   stage: package
   services:
     - docker:19.03.8-dind
+  dependencies:
+    - build
   script:
-    - go-bin-rpm generate -o ocxp-sender.rpm --version $CI_COMMIT_TAG-$CI_PIPELINE_ID --arch amd64
+    - sed -i "s/\!release\!/$CI_PIPELINE_ID/" rpm.json
+    - go-bin-rpm generate -o ocxp-sender.rpm --version $CI_COMMIT_TAG --arch amd64
     - ls -lah ocxp-sender.rpm
 
   rules:
