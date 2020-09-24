@@ -1,7 +1,8 @@
 stages:
  - build
  - package
- - deploy
+ - deploy-testing
+ - deploy-stable
 
 variables:
   DOCKER_DRIVER: overlay2
@@ -11,6 +12,8 @@ variables:
   #NEXUS_PASSWORD: "yoursecretsShouldNotBePlacedHere"
   NEXUS_BASEURL: "https://repo.mhx.at"
 
+# build
+# #####################################################################
 build:
   image: docker-registry.mhx.at/infra-docker/container-images/go-build:1.0.0-latest
   stage: build
@@ -30,7 +33,9 @@ build:
       - bin/ocxp-sender
     expire_in: 10 weeks
 
-package_rpm:
+# package
+# #####################################################################
+package-rpm:
   image: docker-registry.mhx.at/infra-docker/container-images/go-build:1.0.0-latest
   stage: package
   dependencies:
@@ -51,17 +56,13 @@ package_rpm:
       - ocxp-sender.rpm
     expire_in: 10 weeks
 
-deploy_mhx_testing_rhel7_x86_64:
+# deploy
+# #####################################################################
+.deploy-generic-rpm:
   image: curlimages/curl:latest
-  variables:
-    NEXUS_REPONAME: "yum-mhx-testing-hosted"
-    NEXUS_REPOPATH: "rhel7"
-    RPM_NAME: "ocxp-sender"
-    RPM_ARCH: "x86_64"
 
-  stage: deploy
   dependencies:
-    - package_rpm
+    - package-rpm
   script:
     - sh cicd/upload-nexus.sh ocxp-sender.rpm
 
@@ -70,3 +71,21 @@ deploy_mhx_testing_rhel7_x86_64:
     - if: $CI_COMMIT_TAG =~/^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
       when: manual
     - when: never
+
+dply-mhx-testing-rhel7-x86_64:
+  extends: .deploy-generic-rpm
+  stage: deploy-testing
+  variables:
+    NEXUS_REPONAME: "yum-mhx-testing-hosted"
+    NEXUS_REPOPATH: "rhel7"
+    RPM_NAME: "ocxp-sender"
+    RPM_ARCH: "x86_64"
+
+dply-mhx-stable-rhel7-x86_64:
+  extends: .deploy-generic-rpm
+  stage: deploy-stable
+  variables:
+    NEXUS_REPONAME: "yum-mhx-stable-hosted"
+    NEXUS_REPOPATH: "rhel7"
+    RPM_NAME: "ocxp-sender"
+    RPM_ARCH: "x86_64"
