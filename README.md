@@ -15,6 +15,21 @@ ocxp-sender includes the following commandline parameters:
 | AMQP URL | -u<br>--amqp-url | true | URL of the target AMQP (e.g. RabbitMQ), where the data should be sent to, defaults to amqp://localhost:5672 |
 | variables | -v<br>--var | true | Variables in the form "name=value" (multiple -v allowed); get forwarded as tags |
 
+# Influx Line Protocol
+
+Whenever Naemon records a new check result, the ochp/ocxp handler is run, which in turn calls the ocxp-sender executable. A Naemon check result contains the corresponding host and service, the check's resulting state, and any number of performance data lines (can also be zero).
+
+Each line in the performance data reported by Naemon is converted to one line(=measurement) in the Influx Line Protocol output. 
+Additionally, the check result state is converted to an output line itself.
+
+Example:
+```
+// Syntax: <measurement>[,<tag_key>=<tag_value>[,<tag_key>=<tag_value>]] <field_key>=<field_value>[,<field_key>=<field_value>] [<timestamp>]
+value,host=abc.com,label=rta,servicedesc=CI-Alive,uom=ms,variable1=value1 value=1.238,warn=3000,crit=5000,min=0 1601368660199853426
+value,host=abc.com,label=pl,servicedesc=CI-Alive,uom=%,variable1=value1 value=0,warn=80,crit=100,min=0 1601368660199886231
+state,host=abc.com,label=state,servicedesc=CI-Alive,variable1=value1 value=0i 1601368660199896617
+```
+
 # Example naemon configuration
 /etc/naemon/conf.d/commands/commands.cfg:
 ```
