@@ -20,9 +20,9 @@ ocxp-sender includes the following commandline parameters:
 Whenever Naemon records a new check result, the ochp/ocxp handler is run, which in turn calls the ocxp-sender executable. A Naemon check result contains the corresponding host and service, the check's resulting state, and any number of performance data lines (can also be zero).
 
 Each line in the performance data reported by Naemon is converted to one line(=measurement) in the Influx Line Protocol output. 
-Additionally, the check result state is converted to an output line itself.
+Additionally, the check result state is converted to an output line too.
 
-Example:
+Example output, from a host check result:
 ```
 // Syntax: <measurement>[,<tag_key>=<tag_value>[,<tag_key>=<tag_value>]] <field_key>=<field_value>[,<field_key>=<field_value>] [<timestamp>]
 value,host=abc.com,label=rta,servicedesc=CI-Alive,uom=ms,variable1=value1 value=1.238,warn=3000,crit=5000,min=0 1601368660199853426
