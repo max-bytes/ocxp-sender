@@ -12,7 +12,7 @@ ocxp-sender includes the following commandline parameters:
 
 |  | parameter | optional | description |
 |-|-|-|-|
-| host | &#x2011;h<br>&#x2011;&#x2011;host | false | Hostname for which the performance data is reported |
+| host | &#x2011;h<br>--host | false | Hostname for which the performance data is reported |
 | service description | -s<br>--service | false | Name of the service for which the performance data is reported |
 | state | -t<br>--state | false | (Integer); state of the service, according to Naemon standard: https://www.naemon.org/documentation/usersguide/pluginapi.html#return_code |
 | performance data | -p<br>--perfdata | false | The performance data as reported by naemon |
