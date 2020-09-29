@@ -13,7 +13,7 @@ ocxp-sender includes the following commandline parameters:
 | state | -s<br>--state | false | (Integer); state of the service, according to Naemon standard: https://www.naemon.org/documentation/usersguide/pluginapi.html#return_code |
 | performance data | -p<br>--perfdata | false | The performance data as reported by naemon |
 | AMQP URL | -u<br>--amqp-url | true | URL of the target AMQP (e.g. RabbitMQ), where the data should be sent to, defaults to amqp://localhost:5672 |
-| Variables | -v<br>--var | true | variables in the form "name=value" (multiple -v allowed); get forwarded as tags |
+| variables | -v<br>--var | true | variables in the form "name=value" (multiple -v allowed); get forwarded as tags |
 
 # Example naemon configuration
 /etc/naemon/conf.d/commands/commands.cfg:
