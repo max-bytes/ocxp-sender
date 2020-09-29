@@ -12,8 +12,8 @@ ocxp-sender includes the following commandline parameters:
 
 |  | parameter | optional | description |
 |-|-|-|-|
-| host | &#x2011;h<br>--host | false | Hostname for which the performance data is reported |
-| service description | -s<br>--service | false | Name of the service for which the performance data is reported |
+| name of host | &#x2011;h<br>--host | false | Hostname for which the performance data is reported |
+| name of service | -s<br>--service | false | Name of the service for which the performance data is reported |
 | state | -t<br>--state | false | (Integer); state of the service, according to Naemon standard: https://www.naemon.org/documentation/usersguide/pluginapi.html#return_code |
 | performance data | -p<br>--perfdata | false | The performance data as reported by naemon |
 | AMQP URL | -u<br>--amqp-url | true | URL of the target AMQP (e.g. RabbitMQ), where the data should be sent to, defaults to amqp://localhost:5672 |
