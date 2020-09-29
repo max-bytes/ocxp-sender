@@ -12,9 +12,9 @@ ocxp-sender includes the following commandline parameters:
 
 |  | parameter | optional | description |
 |-|-|-|-|
-| hostname | &#x2011;h<br>&#x2011;&#x2011;hostname | false | Hostname for which the performance data is reported |
-| service description | -d<br>--desc | false | Service description for which the performance data is reported |
-| state | -s<br>--state | false | (Integer); state of the service, according to Naemon standard: https://www.naemon.org/documentation/usersguide/pluginapi.html#return_code |
+| host | &#x2011;h<br>&#x2011;&#x2011;host | false | Hostname for which the performance data is reported |
+| service description | -s<br>--service | false | Name of the service for which the performance data is reported |
+| state | -t<br>--state | false | (Integer); state of the service, according to Naemon standard: https://www.naemon.org/documentation/usersguide/pluginapi.html#return_code |
 | performance data | -p<br>--perfdata | false | The performance data as reported by naemon |
 | AMQP URL | -u<br>--amqp-url | true | URL of the target AMQP (e.g. RabbitMQ), where the data should be sent to, defaults to amqp://localhost:5672 |
 | variables | -v<br>--var | true | Variables in the form "name=value" (multiple -v allowed); get forwarded as tags |
@@ -29,20 +29,20 @@ Additionally, the check result state is converted to an output line too.
 Example output, from a host check result:
 ```
 // Syntax: <measurement>[,<tag_key>=<tag_value>[,<tag_key>=<tag_value>]] <field_key>=<field_value>[,<field_key>=<field_value>] [<timestamp>]
-value,host=abc.com,label=rta,servicedesc=CI-Alive,uom=ms,variable1=value1 value=1.238,warn=3000,crit=5000,min=0 1601368660199853426
-value,host=abc.com,label=pl,servicedesc=CI-Alive,uom=%,variable1=value1 value=0,warn=80,crit=100,min=0 1601368660199886231
-state,host=abc.com,label=state,servicedesc=CI-Alive,variable1=value1 value=0i 1601368660199896617
+value,host=abc.com,label=rta,service=CI-Alive,uom=ms,variable1=value1 value=1.238,warn=3000,crit=5000,min=0 1601368660199853426
+value,host=abc.com,label=pl,service=CI-Alive,uom=%,variable1=value1 value=0,warn=80,crit=100,min=0 1601368660199886231
+state,host=abc.com,label=state,service=CI-Alive,variable1=value1 value=0i 1601368660199896617
 ```
 
 # Example naemon configuration
 /etc/naemon/conf.d/commands/commands.cfg:
 ```
 define command {
-command_name ocsp_handler /data/ocxp-sender/ocxp-sender -h '$HOSTNAME$' -d '$SERVICEDESC$' -s $SERVICESTATEID$ -p '$SERVICEPERFDATA$' -v tag1=value1
+command_name ocsp_handler /data/ocxp-sender/ocxp-sender -h '$HOSTNAME$' -s '$SERVICEDESC$' -t $SERVICESTATEID$ -p '$SERVICEPERFDATA$' -v tag1=value1
 }
 define command {
 command_name ochp_handler
-command_line /data/ocxp-sender/ocxp-sender -h '$HOSTNAME$' -d 'CI-Alive' -s $HOSTSTATEID$ -p '$HOSTPERFDATA$' -v tag1=value1
+command_line /data/ocxp-sender/ocxp-sender -h '$HOSTNAME$' -s 'CI-Alive' -t $HOSTSTATEID$ -p '$HOSTPERFDATA$' -v tag1=value1
 }
 ```
 

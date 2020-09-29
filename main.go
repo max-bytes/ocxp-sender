@@ -68,22 +68,22 @@ func isFlagPassed(name string) bool {
 }
 
 func main() {
-	var hostname string
-	var serviceDescription string
+	var host string
+	var service string
 	var state int
 	var variableFlags variableFlags
 	var perfData string
 	var amqpURL string
 	flag.VarP(&variableFlags, "var", "v", "variables in the form \"name=value\" (multiple -v allowed); get forwarded as tags")
-	flag.StringVarP(&hostname, "hostname", "h", "", "hostname")
-	flag.StringVarP(&serviceDescription, "desc", "d", "", "service description")
-	flag.IntVarP(&state, "state", "s", 0, "state")
+	flag.StringVarP(&host, "host", "h", "", "Name of host")
+	flag.StringVarP(&service, "service", "s", "", "Name of service")
+	flag.IntVarP(&state, "state", "t", 0, "State of the check")
 	flag.StringVarP(&perfData, "perfdata", "p", "", "Performance data")
 	flag.StringVarP(&amqpURL, "amqp-url", "u", "amqp://localhost:5672", "URL of the AMQP (e.g. RabbitMQ) server to send the data to")
 	flag.Parse()
 	
-	if !isFlagPassed("hostname") { fail("hostname not set") }
-	if !isFlagPassed("desc") { fail("service description not set") }
+	if !isFlagPassed("host") { fail("host name not set") }
+	if !isFlagPassed("service") { fail("service name not set") }
 	if !isFlagPassed("state") { fail("state not set") }
 	if !isFlagPassed("perfdata") { fail("Performance data not set") }
 
@@ -99,8 +99,8 @@ func main() {
 	encoder := protocol.NewEncoder(&b)
 
 	tags := map[string]string {
-		"host": hostname,
-		"servicedesc": serviceDescription,
+		"host": host,
+		"service": service,
 	}
 	// add input tags
 	for k, v := range inputTags {
