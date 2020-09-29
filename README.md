@@ -2,6 +2,10 @@
 
 The main purpose of this executable (ocxp-sender) is to take performance data received from Naemon using the ochp/ocsp mechanism (https://www.naemon.org/documentation/usersguide/distributed.html), transform it into Influx Line Protocol (https://docs.influxdata.com/influxdb/v2.0/reference/syntax/line-protocol/), then hand it over an AMQP-supporting message queue (https://en.wikipedia.org/wiki/Advanced_Message_Queuing_Protocol), like RabbitMQ (https://www.rabbitmq.com/).
 
+# Build and package
+
+ocxp-sender is built and packaged for release using gitlab CI pipelines. See .gitlab-ci.yml for further info. To run ocxp-sender locally (during development), you can use `go run`.
+
 # Commandline parameters
 
 ocxp-sender includes the following commandline parameters:
