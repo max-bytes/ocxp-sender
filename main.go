@@ -74,7 +74,7 @@ func main() {
 	var variableFlags variableFlags
 	var perfData string
 	var amqpURL string
-	flag.VarP(&variableFlags, "var", "v", "variables in the form \"name=value\" (multiple -v allowed); get passed as tags")
+	flag.VarP(&variableFlags, "var", "v", "variables in the form \"name=value\" (multiple -v allowed); get forwarded as tags")
 	flag.StringVarP(&hostname, "hostname", "h", "", "hostname")
 	flag.StringVarP(&serviceDescription, "desc", "d", "", "service description")
 	flag.IntVarP(&state, "state", "s", 0, "state")
