@@ -116,7 +116,7 @@ func main() {
 	}
 
 	// add state as its own metric(?), with the state encoded as an integer (0 to 3)
-	metric := perfData2metric("state", PerfData{
+	metric := perfData2metric("value", PerfData{
 		Key: "state",
 		Value: state,
 	}, tags)
