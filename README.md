@@ -8,7 +8,7 @@ ocxp-sender includes the following commandline parameters:
 
 |  | parameter | optional | description |
 |-|-|-|-|
-| hostname | -h<br>--hostname | false | Hostname for which the performance data is reported |
+| hostname | &#x2011;h<br>&#x2011;&#x2011;hostname | false | Hostname for which the performance data is reported |
 | service description | -d<br>--desc | false | Service description for which the performance data is reported |
 | state | -s<br>--state | false | (Integer); state of the service, according to Naemon standard: https://www.naemon.org/documentation/usersguide/pluginapi.html#return_code |
 | performance data | -p<br>--perfdata | false | The performance data as reported by naemon |
