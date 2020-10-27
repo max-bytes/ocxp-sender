@@ -18,6 +18,17 @@ ocxp-sender includes the following commandline parameters:
 | performance data | -p<br>--perfdata | false | The performance data as reported by naemon |
 | AMQP URL | -u<br>--amqp-url | true | URL of the target AMQP (e.g. RabbitMQ), where the data should be sent to, defaults to amqp://localhost:5672 |
 | variables | -v<br>--var | true | Variables in the form "name=value" (multiple -v allowed); get forwarded as tags |
+| daemonize | -d<br>--daemonize | false | Whether or not to start the executable as a long-running daemon, normally not needed |
+
+# "Lazy" daemonizing
+Repeatedly opening and closing connections to AMQP/RabbitMQ is a very resource intensive and wasteful operation. To reduce the number of connections and keep a single stable connection, ocxp-sender does "lazy" daemonizing. When called for the first time, ocxp-sender tries send its data over a local TCP-port (55550). If it can successfully hand over the data, it is done. However, if there is no-one listening on the port, it does the following:
+* starts its own executable with the -d flag. This "forks" the independent daemon process that can continue running even if the source process has finished
+* waits a small amount of time for the daemon to start
+* tries to send the data over the TCP-port one more time
+
+When ocxp-sender is run with the -d flag, it becomes a long-running process. It starts listening on the local TCP-port for incoming data. Opening the port guarantees that only a single process can become the daemon, because others that try to listen will fail. It also opens the single connection to AMQP/RabbitMQ, over which all incoming data is sent.
+
+The daemon is equipped to detect longer intervals of inactivity (=no incoming data) and will gracefully close itself if that is the case.
 
 # Influx Line Protocol
 
