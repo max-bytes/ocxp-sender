@@ -6,6 +6,10 @@ import (
 	"bytes"
 	"strconv"
 	"time"
+	"os/exec"
+	"os"
+	"net"
+	"bufio"
 	"strings"
 	flag "github.com/spf13/pflag"
 	"regexp"
@@ -14,58 +18,7 @@ import (
 )
 
 const QueueName = "naemon"
-
-type Metric struct {
-	name string
-	tags []*protocol.Tag
-	fields []*protocol.Field
-}
-func (m Metric) Time() time.Time {
-    return time.Now()
-}
-func (m Metric) Name() string {
-    return m.name
-}
-func (m Metric) TagList() []*protocol.Tag {
-    return m.tags
-}
-func (m Metric) FieldList() []*protocol.Field {
-    return m.fields
-}
-
-func failOnError(err error, msg string) {
-	if err != nil {
-		log.Fatalf("%s: %s", msg, err)
-	}
-}
-
-func fail(msg string) {
-	log.Fatalf("%s", msg)
-}
-
-type variableFlags []string
-
-func (i *variableFlags) String() string {
-	return strings.Join(*i, ",")
-}
-
-func (i *variableFlags) Set(value string) error {
-	*i = append(*i, value)
-	return nil
-}
-func (i *variableFlags) Type() string {
-	return "string"
-}
-
-func isFlagPassed(name string) bool {
-    found := false
-    flag.Visit(func(f *flag.Flag) {
-        if f.Name == name {
-            found = true
-        }
-    })
-    return found
-}
+const DaemonAddress = "127.0.0.1:55550"
 
 func main() {
 	var host string
@@ -73,6 +26,7 @@ func main() {
 	var state int
 	var variableFlags variableFlags
 	var perfData string
+	var daemonize bool
 	var amqpURL string
 	flag.VarP(&variableFlags, "var", "v", "variables in the form \"name=value\" (multiple -v allowed); get forwarded as tags")
 	flag.StringVarP(&host, "host", "h", "", "Name of host")
@@ -80,18 +34,142 @@ func main() {
 	flag.IntVarP(&state, "state", "t", 0, "State of the check")
 	flag.StringVarP(&perfData, "perfdata", "p", "", "Performance data")
 	flag.StringVarP(&amqpURL, "amqp-url", "u", "amqp://localhost:5672", "URL of the AMQP (e.g. RabbitMQ) server to send the data to")
+	flag.BoolVarP(&daemonize, "daemonize", "d", false, "Whether or not to spawn a daemon process that runs infinitely")
 	flag.Parse()
-	
-	if !isFlagPassed("host") { fail("host name not set") }
-	if !isFlagPassed("service") { fail("service name not set") }
-	if !isFlagPassed("state") { fail("state not set") }
-	if !isFlagPassed("perfdata") { fail("Performance data not set") }
 
+	if daemonize { // run as daemon
+		fmt.Println("Running daemon...")
+		runDaemon(DaemonAddress, amqpURL, 6 * time.Minute)
+		fmt.Println("Stopping daemon")
+	} else { // run as regular program that sends its metrics to the daemon
+		if !isFlagPassed("host") { fail("host name not set") }
+		if !isFlagPassed("service") { fail("service name not set") }
+		if !isFlagPassed("state") { fail("state not set") }
+		if !isFlagPassed("perfdata") { fail("Performance data not set") }
+	
+		b, err := parse(host, service, state, variableFlags, perfData)
+		failOnError(err, "Failed to parse inputs")
+
+		// only publish if there are actually metrics/perfdata
+		if b.Len() > 0 {
+			fmt.Println("Sending:")
+			fmt.Println(b.String());
+
+			conn, err := net.Dial("tcp", DaemonAddress)
+			if err == nil { // try to connect to already running daemon
+				defer conn.Close()
+				// write to socket
+				_, err = conn.Write(b.Bytes())
+				failOnError(err, "Failed to write")
+			} else {
+				fmt.Println("Trying to spawn daemon")
+
+				// spawn daemon
+				binary, err := exec.LookPath(os.Args[0])
+				failOnError(err, "Failed to lookup binary")
+				_, err = os.StartProcess(binary, []string{binary, "-d", "-u", amqpURL}, &os.ProcAttr{Dir: "", Env: nil,
+						Files: []*os.File{nil, nil, nil}, Sys: nil})
+					
+				// we don't fail when daemon start failed, because maybe another run has started it successfully
+				// failOnError(err, "Failed to spawn daemon")
+
+				// give daemon time to startup
+				time.Sleep(500 * time.Millisecond)
+
+				// try to connect and send one more time
+				conn, err := net.Dial("tcp", DaemonAddress)
+				failOnError(err, "Failed to connect to daemon")
+				defer conn.Close()
+				_, err = conn.Write(b.Bytes())
+				failOnError(err, "Failed to write")
+			}
+		}
+	}
+}
+
+func runDaemon(listenAddress string, amqpURL string, inactivityTimeout time.Duration) {
+	const maxBufferSize = 16384
+
+	// setup TCP server
+	connection, err := net.Listen("tcp", listenAddress)
+	failOnError(err, "Failed to listen on port")
+	defer connection.Close()
+
+	// setup amqp connection
+	amqpConnection, err := amqp.Dial(amqpURL)
+	failOnError(err, "Failed to connect to RabbitMQ")
+	defer amqpConnection.Close()
+	channel, err := amqpConnection.Channel()
+	failOnError(err, "Failed to open a channel")
+	defer channel.Close()
+	queue, err := channel.QueueDeclare(
+		QueueName, // name
+		true,   // durable
+		false,   // delete when unused
+		false,   // exclusive
+		false,   // no-wait
+		nil,     // arguments
+	)
+	failOnError(err, "Failed to declare a queue")
+
+	doneChan := make(chan error, 1)
+	heartbeatChan := make(chan bool, 1)
+
+	go func() {
+		buffer := make([]byte, maxBufferSize)
+
+		// var i = 0
+
+		for {
+			conn, err := connection.Accept()
+			if err != nil {
+				doneChan <- err
+				return
+			}
+
+			n, err := bufio.NewReaderSize(conn, maxBufferSize).Read(buffer)
+			if err != nil {
+				doneChan <- err
+				return
+			}
+
+			received := buffer[:n]
+			
+			err = publish(channel, queue, received)
+			if err != nil {
+				doneChan <- err
+				return
+			}
+
+			// fmt.Println(i)
+			// i++
+
+			heartbeatChan <- true
+		}
+	}()
+
+	// TODO: add signal handling to allow graceful exit
+	L:
+	for {
+		select {
+		case err = <-doneChan:
+			failOnError(err, "Encountered error while processing message")
+		case _ = <-heartbeatChan: // heartbeat encountered, continue loop and restart select
+		case <-time.After(inactivityTimeout):
+			fmt.Println("Reached inactivity timeout, closing...")
+			break L
+		}
+	}
+}
+
+func parse(host string, service string, state int, variableFlags variableFlags, perfData string) (*bytes.Buffer, error) {
 	// create tags from variables
     inputTags := make(map[string]string)
     for _, item := range variableFlags {
 		x := strings.SplitN(item, "=", 2)
-		if (len(x) < 2) { fail(fmt.Sprintf("variable %v could not be parsed into name=value", item)) }
+		if (len(x) < 2) { 
+			return nil, fmt.Errorf("variable %v could not be parsed into name=value", item)
+		}
         inputTags[x[0]] = x[1]
     }
 	
@@ -111,7 +189,7 @@ func main() {
 		metric := perfData2metric("value", pd, tags)
 		_, err := encoder.Encode(metric)
 		if err != nil {
-			fmt.Println(err)
+			return nil, err
 		}
 	}
 
@@ -123,44 +201,23 @@ func main() {
 	
 	_, err := encoder.Encode(metric)
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
 
-	// only publish if there are actually metrics/perfdata
-	if b.Len() > 0 {
-		fmt.Println(b.String());
+	return &b, nil
+}
 
-		connection, err := amqp.Dial(amqpURL)
-		failOnError(err, "Failed to connect to RabbitMQ")
-
-		channel, err := connection.Channel()
-		failOnError(err, "Failed to open a channel")
-
-		queue, err := channel.QueueDeclare(
-			QueueName, // name
-			true,   // durable
-			false,   // delete when unused
-			false,   // exclusive
-			false,   // no-wait
-			nil,     // arguments
-		)
-		failOnError(err, "Failed to declare a queue")
-
-		err = channel.Publish(
-			"",     // exchange
-			queue.Name, // routing key
-			false,  // mandatory
-			false,  // immediate
-			amqp.Publishing {
-			  ContentType: "text/plain",
-			  Body:        b.Bytes(),
-			  DeliveryMode: 2,
-			})
-		failOnError(err, "Failed to publish a message")
-
-		defer channel.Close()
-		defer connection.Close()
-	}
+func publish(channel *amqp.Channel, queue amqp.Queue, msg []byte) error {
+	return channel.Publish(
+		"",     // exchange
+		queue.Name, // routing key
+		false,  // mandatory
+		false,  // immediate
+		amqp.Publishing {
+		  ContentType: "text/plain",
+		  Body:        msg,
+		  DeliveryMode: 2,
+		})
 }
 
 func perfData2metric(metricName string, pd PerfData, addedTags map[string]string) Metric {
@@ -263,4 +320,56 @@ func parsePerfData(str string) <-chan PerfData {
 	}()
 
 	return ch
+}
+
+type Metric struct {
+	name string
+	tags []*protocol.Tag
+	fields []*protocol.Field
+}
+func (m Metric) Time() time.Time {
+    return time.Now()
+}
+func (m Metric) Name() string {
+    return m.name
+}
+func (m Metric) TagList() []*protocol.Tag {
+    return m.tags
+}
+func (m Metric) FieldList() []*protocol.Field {
+    return m.fields
+}
+
+func failOnError(err error, msg string) {
+	if err != nil {
+		log.Fatalf("%s: %s", msg, err)
+	}
+}
+
+func fail(msg string) {
+	log.Fatalf("%s", msg)
+}
+
+type variableFlags []string
+
+func (i *variableFlags) String() string {
+	return strings.Join(*i, ",")
+}
+
+func (i *variableFlags) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+func (i *variableFlags) Type() string {
+	return "string"
+}
+
+func isFlagPassed(name string) bool {
+    found := false
+    flag.Visit(func(f *flag.Flag) {
+        if f.Name == name {
+            found = true
+        }
+    })
+    return found
 }
