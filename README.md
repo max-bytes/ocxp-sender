@@ -21,7 +21,7 @@ ocxp-sender includes the following commandline parameters:
 | daemonize | -d<br>--daemonize | false | Whether or not to start the executable as a long-running daemon, normally not needed |
 
 # "Lazy" daemonizing
-Repeatedly opening and closing connections to AMQP/RabbitMQ is a very resource intensive and wasteful operation. To reduce the number of connections and keep a single stable connection, ocxp-sender does "lazy" daemonizing. When called for the first time, ocxp-sender tries send its data over a local TCP-port (55550). If it can successfully hand over the data, it is done. However, if there is no-one listening on the port, it does the following:
+Repeatedly opening and closing connections to AMQP/RabbitMQ is a very resource intensive and wasteful operation (https://www.rabbitmq.com/connections.html#high-connection-churn). To reduce the number of connections and keep a single stable connection, ocxp-sender does "lazy" daemonizing. When called for the first time, ocxp-sender tries send its data over a local TCP-port (55550). If it can successfully hand over the data, it is done. However, if there is no-one listening on the port, it does the following:
 * starts its own executable with the -d flag. This "forks" the independent daemon process that can continue running even if the source process has finished
 * waits a small amount of time for the daemon to start
 * tries to send the data over the TCP-port one more time
@@ -44,6 +44,9 @@ value,host=abc.com,label=rta,service=CI-Alive,uom=ms,variable1=value1 value=1.23
 value,host=abc.com,label=pl,service=CI-Alive,uom=%,variable1=value1 value=0,warn=80,crit=100,min=0 1601368660199886231
 value,host=abc.com,label=state,service=CI-Alive,variable1=value1 value=0i 1601368660199896617
 ```
+
+# RabbitMQ
+After transforming the incoming data into Influx Line Protocol lines, it sends them over to the specified RabbitMQ/AMQP server. Specifically, it publishes a single message containing all lines to an exchange called "naemon". If the exchange does not exist yet, it declares it as a fanout exchange. ocxp-sender however does not create a queue or a binding. The "other side" is responsible for declaring how the messages should be handled from the exchange (queues, bindings).
 
 # Example naemon configuration
 /etc/naemon/conf.d/commands/commands.cfg:
