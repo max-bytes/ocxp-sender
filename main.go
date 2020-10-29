@@ -17,7 +17,7 @@ import (
 	"github.com/influxdata/line-protocol"
 )
 
-const QueueName = "naemon"
+const ExchangeName = "naemon"
 const DaemonAddress = "127.0.0.1:55550"
 
 func main() {
@@ -102,15 +102,16 @@ func runDaemon(listenAddress string, amqpURL string, inactivityTimeout time.Dura
 	channel, err := amqpConnection.Channel()
 	failOnError(err, "Failed to open a channel")
 	defer channel.Close()
-	queue, err := channel.QueueDeclare(
-		QueueName, // name
-		true,   // durable
-		false,   // delete when unused
-		false,   // exclusive
-		false,   // no-wait
-		nil,     // arguments
+	err = channel.ExchangeDeclare(
+		ExchangeName,   // name
+		"fanout", // type
+		true,     // durable
+		false,    // auto-deleted
+		false,    // internal
+		false,    // no-wait
+		nil,      // arguments
 	)
-	failOnError(err, "Failed to declare a queue")
+	failOnError(err, "Failed to declare an exchange")
 
 	doneChan := make(chan error, 1)
 	heartbeatChan := make(chan bool, 1)
@@ -135,7 +136,7 @@ func runDaemon(listenAddress string, amqpURL string, inactivityTimeout time.Dura
 
 			received := buffer[:n]
 			
-			err = publish(channel, queue, received)
+			err = publish(channel, ExchangeName, "", received)
 			if err != nil {
 				doneChan <- err
 				return
@@ -207,10 +208,10 @@ func parse(host string, service string, state int, variableFlags variableFlags, 
 	return &b, nil
 }
 
-func publish(channel *amqp.Channel, queue amqp.Queue, msg []byte) error {
+func publish(channel *amqp.Channel, exchange string, routingKey string, msg []byte) error {
 	return channel.Publish(
-		"",     // exchange
-		queue.Name, // routing key
+		exchange,     // exchange
+		routingKey, // routing key
 		false,  // mandatory
 		false,  // immediate
 		amqp.Publishing {
