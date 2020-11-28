@@ -59,12 +59,12 @@ package-rpm:
 # deploy
 # #####################################################################
 .deploy-generic-rpm:
-  image: curlimages/curl:latest
+  image: docker-registry.mhx.at/infra-docker/container-images/push-to-nexus:latest
 
   dependencies:
     - package-rpm
   script:
-    - sh cicd/upload-nexus.sh ocxp-sender.rpm
+    - sh /upload-rpm.sh ocxp-sender.rpm
 
   rules:
     # regex for semver taken from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
