@@ -164,7 +164,7 @@ func handleClient(conn net.Conn, channel *amqp.Channel, doneChan chan error, hea
 
 	received := buffer[:n]
 
-	// NOTE: we assume that amqp.Channel and its publish method are thread safe
+	// NOTE: we assume that amqp.Channel and its publish method are thread safe and one channel can be used in multiple goroutines
 	// the documentation is not 100% clear on this, but there seems to be a proper lock/mutex in place:
 	// https://github.com/streadway/amqp/blob/master/channel.go#L1331
 	err = channel.Publish(
