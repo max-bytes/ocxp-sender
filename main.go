@@ -1,20 +1,21 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"log"
-	"bytes"
-	"strconv"
-	"time"
-	"os/exec"
-	"os"
 	"net"
-	"bufio"
-	"strings"
-	flag "github.com/spf13/pflag"
+	"os"
+	"os/exec"
 	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	protocol "github.com/influxdata/line-protocol"
+	flag "github.com/spf13/pflag"
 	"github.com/streadway/amqp"
-	"github.com/influxdata/line-protocol"
 )
 
 const ExchangeName = "naemon"
@@ -39,21 +40,29 @@ func main() {
 
 	if daemonize { // run as daemon
 		fmt.Println("Running daemon...")
-		runDaemon(DaemonAddress, amqpURL, 6 * time.Minute)
+		runDaemon(DaemonAddress, amqpURL, 6*time.Minute)
 		fmt.Println("Stopping daemon")
 	} else { // run as regular program that sends its metrics to the daemon
-		if !isFlagPassed("host") { fail("host name not set") }
-		if !isFlagPassed("service") { fail("service name not set") }
-		if !isFlagPassed("state") { fail("state not set") }
-		if !isFlagPassed("perfdata") { fail("Performance data not set") }
-	
+		if !isFlagPassed("host") {
+			fail("host name not set")
+		}
+		if !isFlagPassed("service") {
+			fail("service name not set")
+		}
+		if !isFlagPassed("state") {
+			fail("state not set")
+		}
+		if !isFlagPassed("perfdata") {
+			fail("Performance data not set")
+		}
+
 		b, err := parse(host, service, state, variableFlags, perfData)
 		failOnError(err, "Failed to parse inputs")
 
 		// only publish if there are actually metrics/perfdata
 		if b.Len() > 0 {
 			fmt.Println("Sending:")
-			fmt.Println(b.String());
+			fmt.Println(b.String())
 
 			conn, err := net.Dial("tcp", DaemonAddress)
 			if err == nil { // try to connect to already running daemon
@@ -68,8 +77,8 @@ func main() {
 				binary, err := exec.LookPath(os.Args[0])
 				failOnError(err, "Failed to lookup binary")
 				_, err = os.StartProcess(binary, []string{binary, "-d", "-u", amqpURL}, &os.ProcAttr{Dir: "", Env: nil,
-						Files: []*os.File{nil, nil, nil}, Sys: nil})
-					
+					Files: []*os.File{nil, nil, nil}, Sys: nil})
+
 				// we don't fail when daemon start failed, because maybe another run has started it successfully
 				// failOnError(err, "Failed to spawn daemon")
 
@@ -88,7 +97,6 @@ func main() {
 }
 
 func runDaemon(listenAddress string, amqpURL string, inactivityTimeout time.Duration) {
-	const maxBufferSize = 16384
 
 	// setup TCP server
 	connection, err := net.Listen("tcp", listenAddress)
@@ -103,13 +111,13 @@ func runDaemon(listenAddress string, amqpURL string, inactivityTimeout time.Dura
 	failOnError(err, "Failed to open a channel")
 	defer channel.Close()
 	err = channel.ExchangeDeclare(
-		ExchangeName,   // name
-		"fanout", // type
-		true,     // durable
-		false,    // auto-deleted
-		false,    // internal
-		false,    // no-wait
-		nil,      // arguments
+		ExchangeName, // name
+		"fanout",     // type
+		true,         // durable
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil,          // arguments
 	)
 	failOnError(err, "Failed to declare an exchange")
 
@@ -117,9 +125,6 @@ func runDaemon(listenAddress string, amqpURL string, inactivityTimeout time.Dura
 	heartbeatChan := make(chan bool, 1)
 
 	go func() {
-		buffer := make([]byte, maxBufferSize)
-
-		// var i = 0
 
 		for {
 			conn, err := connection.Accept()
@@ -128,29 +133,12 @@ func runDaemon(listenAddress string, amqpURL string, inactivityTimeout time.Dura
 				return
 			}
 
-			n, err := bufio.NewReaderSize(conn, maxBufferSize).Read(buffer)
-			if err != nil {
-				doneChan <- err
-				return
-			}
-
-			received := buffer[:n]
-			
-			err = publish(channel, ExchangeName, "", received)
-			if err != nil {
-				doneChan <- err
-				return
-			}
-
-			// fmt.Println(i)
-			// i++
-
-			heartbeatChan <- true
+			go handleClient(conn, channel, doneChan, heartbeatChan)
 		}
 	}()
 
 	// TODO: add signal handling to allow graceful exit
-	L:
+L:
 	for {
 		select {
 		case err = <-doneChan:
@@ -163,22 +151,56 @@ func runDaemon(listenAddress string, amqpURL string, inactivityTimeout time.Dura
 	}
 }
 
+func handleClient(conn net.Conn, channel *amqp.Channel, doneChan chan error, heartbeatChan chan bool) {
+	defer conn.Close()
+
+	const maxBufferSize = 16384
+	buffer := make([]byte, maxBufferSize)
+	n, err := bufio.NewReaderSize(conn, maxBufferSize).Read(buffer)
+	if err != nil {
+		doneChan <- err
+		return
+	}
+
+	received := buffer[:n]
+
+	// NOTE: we assume that amqp.Channel and its publish method are thread safe
+	// the documentation is not 100% clear on this, but there seems to be a proper lock/mutex in place:
+	// https://github.com/streadway/amqp/blob/master/channel.go#L1331
+	err = channel.Publish(
+		ExchangeName, // exchange
+		"",           // routing key
+		false,        // mandatory
+		false,        // immediate
+		amqp.Publishing{
+			ContentType:  "text/plain",
+			Body:         received,
+			DeliveryMode: 2,
+		})
+	if err != nil {
+		doneChan <- err
+		return
+	}
+
+	heartbeatChan <- true
+}
+
 func parse(host string, service string, state int, variableFlags variableFlags, perfData string) (*bytes.Buffer, error) {
 	// create tags from variables
-    inputTags := make(map[string]string)
-    for _, item := range variableFlags {
+	inputTags := make(map[string]string)
+	for _, item := range variableFlags {
 		x := strings.SplitN(item, "=", 2)
-		if (len(x) < 2) { 
+		if len(x) < 2 {
 			return nil, fmt.Errorf("variable %v could not be parsed into name=value", item)
 		}
-        inputTags[x[0]] = x[1]
-    }
-	
+		inputTags[x[0]] = x[1]
+	}
+
 	var b bytes.Buffer
 	encoder := protocol.NewEncoder(&b)
 
-	tags := map[string]string {
-		"host": host,
+	tags := map[string]string{
+		"host":    host,
 		"service": service,
 	}
 	// add input tags
@@ -196,10 +218,10 @@ func parse(host string, service string, state int, variableFlags variableFlags, 
 
 	// add state as its own metric(?), with the state encoded as an integer (0 to 3)
 	metric := perfData2metric("value", PerfData{
-		Key: "state",
+		Key:   "state",
 		Value: state,
 	}, tags)
-	
+
 	_, err := encoder.Encode(metric)
 	if err != nil {
 		return nil, err
@@ -208,69 +230,57 @@ func parse(host string, service string, state int, variableFlags variableFlags, 
 	return &b, nil
 }
 
-func publish(channel *amqp.Channel, exchange string, routingKey string, msg []byte) error {
-	return channel.Publish(
-		exchange,     // exchange
-		routingKey, // routing key
-		false,  // mandatory
-		false,  // immediate
-		amqp.Publishing {
-		  ContentType: "text/plain",
-		  Body:        msg,
-		  DeliveryMode: 2,
-		})
-}
-
 func perfData2metric(metricName string, pd PerfData, addedTags map[string]string) Metric {
-	var fields = []*protocol.Field {
-		&(protocol.Field { Key: "value", Value: pd.Value }),
+	var fields = []*protocol.Field{
+		&(protocol.Field{Key: "value", Value: pd.Value}),
 	}
 	if pd.Warn != nil {
-		fields = append(fields, &(protocol.Field { Key: "warn", Value: *pd.Warn }))
+		fields = append(fields, &(protocol.Field{Key: "warn", Value: *pd.Warn}))
 	}
 	if pd.Crit != nil {
-		fields = append(fields, &(protocol.Field { Key: "crit", Value: *pd.Crit }))
+		fields = append(fields, &(protocol.Field{Key: "crit", Value: *pd.Crit}))
 	}
 	if pd.Min != nil {
-		fields = append(fields, &(protocol.Field { Key: "min", Value: *pd.Min }))
+		fields = append(fields, &(protocol.Field{Key: "min", Value: *pd.Min}))
 	}
 	if pd.Max != nil {
-		fields = append(fields, &(protocol.Field { Key: "max", Value: *pd.Max }))
+		fields = append(fields, &(protocol.Field{Key: "max", Value: *pd.Max}))
 	}
 
-	var tags = []*protocol.Tag {
-		&(protocol.Tag { Key: "label", Value: pd.Key }),
+	var tags = []*protocol.Tag{
+		&(protocol.Tag{Key: "label", Value: pd.Key}),
 	}
 	for key, value := range addedTags {
-		tags = append(tags, &(protocol.Tag { Key: key, Value: value }))
+		tags = append(tags, &(protocol.Tag{Key: key, Value: value}))
 	}
 
 	// add UOM, if present
 	if pd.UOM != nil {
-		tags = append(tags, &(protocol.Tag { Key: "uom", Value: *pd.UOM }))
+		tags = append(tags, &(protocol.Tag{Key: "uom", Value: *pd.UOM}))
 	}
 
-	metric := Metric {
-		name: metricName,
+	metric := Metric{
+		name:   metricName,
 		fields: fields,
-		tags: tags,
+		tags:   tags,
 	}
 
 	return metric
 }
 
 type PerfData struct {
-	Key string
+	Key   string
 	Value interface{}
-	UOM *string
-	Warn *float64
-	Crit *float64
-	Min *float64
-	Max *float64
+	UOM   *string
+	Warn  *float64
+	Crit  *float64
+	Min   *float64
+	Max   *float64
 }
 
 // partly taken from https://github.com/Griesbacher/nagflux/blob/ea877539bc49ed67e9a5e35b8a127b1ff4cadaad/collector/spoolfile/nagiosSpoolfileWorker.go
 var regexPerformanceLabel = regexp.MustCompile(`([^=]+)=(U|[\d\.,\-]+)([\pL\/%]*);?([\d\.,\-:~@]+)?;?([\d\.,\-:~@]+)?;?([\d\.,\-]+)?;?([\d\.,\-]+)?;?\s*`)
+
 func parsePerfData(str string) <-chan PerfData {
 	ch := make(chan PerfData)
 	go func() {
@@ -307,13 +317,13 @@ func parsePerfData(str string) <-chan PerfData {
 				max = &maxF
 			}
 			perf := PerfData{
-				Key: value[1],
+				Key:   value[1],
 				Value: v,
-				UOM: uom,
-				Warn: warn,
-				Crit: crit,
-				Min: min,
-				Max: max,
+				UOM:   uom,
+				Warn:  warn,
+				Crit:  crit,
+				Min:   min,
+				Max:   max,
 			}
 			ch <- perf
 		}
@@ -324,21 +334,22 @@ func parsePerfData(str string) <-chan PerfData {
 }
 
 type Metric struct {
-	name string
-	tags []*protocol.Tag
+	name   string
+	tags   []*protocol.Tag
 	fields []*protocol.Field
 }
+
 func (m Metric) Time() time.Time {
-    return time.Now()
+	return time.Now()
 }
 func (m Metric) Name() string {
-    return m.name
+	return m.name
 }
 func (m Metric) TagList() []*protocol.Tag {
-    return m.tags
+	return m.tags
 }
 func (m Metric) FieldList() []*protocol.Field {
-    return m.fields
+	return m.fields
 }
 
 func failOnError(err error, msg string) {
@@ -366,11 +377,11 @@ func (i *variableFlags) Type() string {
 }
 
 func isFlagPassed(name string) bool {
-    found := false
-    flag.Visit(func(f *flag.Flag) {
-        if f.Name == name {
-            found = true
-        }
-    })
-    return found
+	found := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
 }
