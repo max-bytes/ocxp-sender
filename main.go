@@ -208,21 +208,19 @@ func parse(host string, service string, state int, variableFlags variableFlags, 
 		tags[k] = v
 	}
 
+	timestamp := time.Now()
+
 	for pd := range parsePerfData(perfData) {
-		metric := perfData2metric("value", pd, tags)
+		metric := perfData2metric("metric", pd, tags, timestamp)
 		_, err := encoder.Encode(metric)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	// add state as its own metric(?), with the state encoded as an integer (0 to 3)
-	metric := perfData2metric("value", PerfData{
-		Key:   "state",
-		Value: state,
-	}, tags)
-
-	_, err := encoder.Encode(metric)
+	// add state as its own metric, with the state encoded as an integer (0 to 3)
+	stateMetric := state2metric("state", state, tags, timestamp)
+	_, err := encoder.Encode(stateMetric)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +228,27 @@ func parse(host string, service string, state int, variableFlags variableFlags, 
 	return &b, nil
 }
 
-func perfData2metric(metricName string, pd PerfData, addedTags map[string]string) Metric {
+func state2metric(metricName string, state int, addedTags map[string]string, timestamp time.Time) Metric {
+	var fields = []*protocol.Field{
+		&(protocol.Field{Key: "value", Value: state}),
+	}
+
+	var tags = []*protocol.Tag{}
+	for key, value := range addedTags {
+		tags = append(tags, &(protocol.Tag{Key: key, Value: value}))
+	}
+
+	metric := Metric{
+		name:      metricName,
+		fields:    fields,
+		tags:      tags,
+		timestamp: timestamp,
+	}
+
+	return metric
+}
+
+func perfData2metric(metricName string, pd PerfData, addedTags map[string]string, timestamp time.Time) Metric {
 	var fields = []*protocol.Field{
 		&(protocol.Field{Key: "value", Value: pd.Value}),
 	}
@@ -260,9 +278,10 @@ func perfData2metric(metricName string, pd PerfData, addedTags map[string]string
 	}
 
 	metric := Metric{
-		name:   metricName,
-		fields: fields,
-		tags:   tags,
+		name:      metricName,
+		fields:    fields,
+		tags:      tags,
+		timestamp: timestamp,
 	}
 
 	return metric
@@ -334,13 +353,14 @@ func parsePerfData(str string) <-chan PerfData {
 }
 
 type Metric struct {
-	name   string
-	tags   []*protocol.Tag
-	fields []*protocol.Field
+	name      string
+	tags      []*protocol.Tag
+	fields    []*protocol.Field
+	timestamp time.Time
 }
 
 func (m Metric) Time() time.Time {
-	return time.Now()
+	return m.timestamp
 }
 func (m Metric) Name() string {
 	return m.name
