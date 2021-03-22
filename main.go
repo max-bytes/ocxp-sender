@@ -56,7 +56,7 @@ func main() {
 			fail("Performance data not set")
 		}
 
-		b, err := parse(host, service, state, variableFlags, perfData)
+		b, err := parse(host, service, state, variableFlags, perfData, time.Now())
 		failOnError(err, "Failed to parse inputs")
 
 		// only publish if there are actually metrics/perfdata
@@ -185,33 +185,25 @@ func handleClient(conn net.Conn, channel *amqp.Channel, doneChan chan error, hea
 	heartbeatChan <- true
 }
 
-func parse(host string, service string, state int, variableFlags variableFlags, perfData string) (*bytes.Buffer, error) {
+func parse(host string, service string, state int, variableFlags variableFlags, perfData string, timestamp time.Time) (*bytes.Buffer, error) {
 	// create tags from variables
-	inputTags := make(map[string]string)
+	tags := make([]*protocol.Tag, 0, len(variableFlags)+2)
+	tags = append(tags, &(protocol.Tag{Key: "host", Value: host}))
+	tags = append(tags, &(protocol.Tag{Key: "service", Value: service}))
 	for _, item := range variableFlags {
 		x := strings.SplitN(item, "=", 2)
 		if len(x) < 2 {
 			return nil, fmt.Errorf("variable %v could not be parsed into name=value", item)
 		}
-		inputTags[x[0]] = x[1]
+		tags = append(tags, &(protocol.Tag{Key: x[0], Value: x[1]}))
 	}
 
 	var b bytes.Buffer
 	encoder := protocol.NewEncoder(&b)
 
-	tags := map[string]string{
-		"host":    host,
-		"service": service,
-	}
-	// add input tags
-	for k, v := range inputTags {
-		tags[k] = v
-	}
-
-	timestamp := time.Now()
-
-	for pd := range parsePerfData(perfData) {
-		metric := perfData2metric("metric", pd, tags, timestamp)
+	pd := parsePerfData(perfData)
+	for pdi := range pd {
+		metric := perfData2metric("metric", pd[pdi], tags, timestamp)
 		_, err := encoder.Encode(metric)
 		if err != nil {
 			return nil, err
@@ -228,27 +220,22 @@ func parse(host string, service string, state int, variableFlags variableFlags, 
 	return &b, nil
 }
 
-func state2metric(metricName string, state int, addedTags map[string]string, timestamp time.Time) Metric {
+func state2metric(metricName string, state int, addedTags []*protocol.Tag, timestamp time.Time) Metric {
 	var fields = []*protocol.Field{
 		&(protocol.Field{Key: "value", Value: state}),
-	}
-
-	var tags = []*protocol.Tag{}
-	for key, value := range addedTags {
-		tags = append(tags, &(protocol.Tag{Key: key, Value: value}))
 	}
 
 	metric := Metric{
 		name:      metricName,
 		fields:    fields,
-		tags:      tags,
+		tags:      addedTags,
 		timestamp: timestamp,
 	}
 
 	return metric
 }
 
-func perfData2metric(metricName string, pd PerfData, addedTags map[string]string, timestamp time.Time) Metric {
+func perfData2metric(metricName string, pd PerfData, addedTags []*protocol.Tag, timestamp time.Time) Metric {
 	var fields = []*protocol.Field{
 		&(protocol.Field{Key: "value", Value: pd.Value}),
 	}
@@ -268,9 +255,7 @@ func perfData2metric(metricName string, pd PerfData, addedTags map[string]string
 	var tags = []*protocol.Tag{
 		&(protocol.Tag{Key: "label", Value: pd.Key}),
 	}
-	for key, value := range addedTags {
-		tags = append(tags, &(protocol.Tag{Key: key, Value: value}))
-	}
+	tags = append(tags, addedTags...)
 
 	// add UOM, if present
 	if pd.UOM != nil {
@@ -300,56 +285,53 @@ type PerfData struct {
 // partly taken from https://github.com/Griesbacher/nagflux/blob/ea877539bc49ed67e9a5e35b8a127b1ff4cadaad/collector/spoolfile/nagiosSpoolfileWorker.go
 var regexPerformanceLabel = regexp.MustCompile(`([^=]+)=(U|[\d\.,\-]+)([\pL\/%]*);?([\d\.,\-:~@]+)?;?([\d\.,\-:~@]+)?;?([\d\.,\-]+)?;?([\d\.,\-]+)?;?\s*`)
 
-func parsePerfData(str string) <-chan PerfData {
-	ch := make(chan PerfData)
-	go func() {
-		perfSlice := regexPerformanceLabel.FindAllStringSubmatch(str, -1)
+func parsePerfData(str string) []PerfData {
+	perfSlice := regexPerformanceLabel.FindAllStringSubmatch(str, -1)
 
-		for _, value := range perfSlice {
-			v, err := strconv.ParseFloat(value[2], 64)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-			var uom *string = nil
-			if value[3] != "" {
-				uom = &(value[3])
-			}
-			var warn *float64 = nil
-			warnF, err := strconv.ParseFloat(value[4], 64)
-			if err == nil {
-				warn = &warnF
-			}
-			var crit *float64 = nil
-			critF, err := strconv.ParseFloat(value[5], 64)
-			if err == nil {
-				crit = &critF
-			}
-			var min *float64 = nil
-			minF, err := strconv.ParseFloat(value[6], 64)
-			if err == nil {
-				min = &minF
-			}
-			var max *float64 = nil
-			maxF, err := strconv.ParseFloat(value[7], 64)
-			if err == nil {
-				max = &maxF
-			}
-			perf := PerfData{
-				Key:   value[1],
-				Value: v,
-				UOM:   uom,
-				Warn:  warn,
-				Crit:  crit,
-				Min:   min,
-				Max:   max,
-			}
-			ch <- perf
+	ret := make([]PerfData, 0, len(perfSlice))
+
+	for _, value := range perfSlice {
+		v, err := strconv.ParseFloat(value[2], 64)
+		if err != nil {
+			fmt.Println(err)
+			continue
 		}
-		close(ch)
-	}()
-
-	return ch
+		var uom *string = nil
+		if value[3] != "" {
+			uom = &(value[3])
+		}
+		var warn *float64 = nil
+		warnF, err := strconv.ParseFloat(value[4], 64)
+		if err == nil {
+			warn = &warnF
+		}
+		var crit *float64 = nil
+		critF, err := strconv.ParseFloat(value[5], 64)
+		if err == nil {
+			crit = &critF
+		}
+		var min *float64 = nil
+		minF, err := strconv.ParseFloat(value[6], 64)
+		if err == nil {
+			min = &minF
+		}
+		var max *float64 = nil
+		maxF, err := strconv.ParseFloat(value[7], 64)
+		if err == nil {
+			max = &maxF
+		}
+		perf := PerfData{
+			Key:   value[1],
+			Value: v,
+			UOM:   uom,
+			Warn:  warn,
+			Crit:  crit,
+			Min:   min,
+			Max:   max,
+		}
+		ret = append(ret, perf)
+	}
+	return ret
 }
 
 type Metric struct {
