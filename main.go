@@ -201,18 +201,14 @@ func parse(host string, service string, state int, variableFlags variableFlags, 
 	var b bytes.Buffer
 	encoder := protocol.NewEncoder(&b)
 
-	pd := parsePerfData(perfData)
-	for pdi := range pd {
-		metric := perfData2metric("metric", pd[pdi], tags, timestamp)
-		_, err := encoder.Encode(metric)
-		if err != nil {
-			return nil, err
-		}
+	err := encodePerfData(perfData, tags, timestamp, encoder)
+	if err != nil {
+		return nil, err
 	}
 
 	// add state as its own metric, with the state encoded as an integer (0 to 3)
 	stateMetric := state2metric("state", state, tags, timestamp)
-	_, err := encoder.Encode(stateMetric)
+	_, err = encoder.Encode(stateMetric)
 	if err != nil {
 		return nil, err
 	}
@@ -235,103 +231,63 @@ func state2metric(metricName string, state int, addedTags []*protocol.Tag, times
 	return metric
 }
 
-func perfData2metric(metricName string, pd PerfData, addedTags []*protocol.Tag, timestamp time.Time) Metric {
-	var fields = []*protocol.Field{
-		&(protocol.Field{Key: "value", Value: pd.Value}),
-	}
-	if pd.Warn != nil {
-		fields = append(fields, &(protocol.Field{Key: "warn", Value: *pd.Warn}))
-	}
-	if pd.Crit != nil {
-		fields = append(fields, &(protocol.Field{Key: "crit", Value: *pd.Crit}))
-	}
-	if pd.Min != nil {
-		fields = append(fields, &(protocol.Field{Key: "min", Value: *pd.Min}))
-	}
-	if pd.Max != nil {
-		fields = append(fields, &(protocol.Field{Key: "max", Value: *pd.Max}))
-	}
-
-	var tags = []*protocol.Tag{
-		&(protocol.Tag{Key: "label", Value: pd.Key}),
-	}
-	tags = append(tags, addedTags...)
-
-	// add UOM, if present
-	if pd.UOM != nil {
-		tags = append(tags, &(protocol.Tag{Key: "uom", Value: *pd.UOM}))
-	}
-
-	metric := Metric{
-		name:      metricName,
-		fields:    fields,
-		tags:      tags,
-		timestamp: timestamp,
-	}
-
-	return metric
-}
-
-type PerfData struct {
-	Key   string
-	Value interface{}
-	UOM   *string
-	Warn  *float64
-	Crit  *float64
-	Min   *float64
-	Max   *float64
-}
-
 // partly taken from https://github.com/Griesbacher/nagflux/blob/ea877539bc49ed67e9a5e35b8a127b1ff4cadaad/collector/spoolfile/nagiosSpoolfileWorker.go
 var regexPerformanceLabel = regexp.MustCompile(`([^=]+)=(U|[\d\.,\-]+)([\pL\/%]*);?([\d\.,\-:~@]+)?;?([\d\.,\-:~@]+)?;?([\d\.,\-]+)?;?([\d\.,\-]+)?;?\s*`)
 
-func parsePerfData(str string) []PerfData {
-	perfSlice := regexPerformanceLabel.FindAllStringSubmatch(str, -1)
+func encodePerfData(str string, addedTags []*protocol.Tag, timestamp time.Time, encoder *protocol.Encoder) error {
+	perfSlices := regexPerformanceLabel.FindAllStringSubmatch(str, -1)
 
-	ret := make([]PerfData, 0, len(perfSlice))
+	for _, perfSlice := range perfSlices {
+		label := perfSlice[1]
 
-	for _, value := range perfSlice {
-		v, err := strconv.ParseFloat(value[2], 64)
+		v, err := strconv.ParseFloat(perfSlice[2], 64)
 		if err != nil {
 			fmt.Println(err)
 			continue
 		}
-		var uom *string = nil
-		if value[3] != "" {
-			uom = &(value[3])
+
+		var fields = []*protocol.Field{
+			&(protocol.Field{Key: "value", Value: v}),
 		}
-		var warn *float64 = nil
-		warnF, err := strconv.ParseFloat(value[4], 64)
+		var tags = []*protocol.Tag{
+			&(protocol.Tag{Key: "label", Value: label}),
+		}
+		tags = append(tags, addedTags...)
+
+		// add UOM to tags, if present
+		if perfSlice[3] != "" {
+			tags = append(tags, &(protocol.Tag{Key: "uom", Value: perfSlice[3]}))
+		}
+		warnF, err := strconv.ParseFloat(perfSlice[4], 64)
 		if err == nil {
-			warn = &warnF
+			fields = append(fields, &(protocol.Field{Key: "warn", Value: warnF}))
 		}
-		var crit *float64 = nil
-		critF, err := strconv.ParseFloat(value[5], 64)
+		critF, err := strconv.ParseFloat(perfSlice[5], 64)
 		if err == nil {
-			crit = &critF
+			fields = append(fields, &(protocol.Field{Key: "crit", Value: critF}))
 		}
-		var min *float64 = nil
-		minF, err := strconv.ParseFloat(value[6], 64)
+		minF, err := strconv.ParseFloat(perfSlice[6], 64)
 		if err == nil {
-			min = &minF
+			fields = append(fields, &(protocol.Field{Key: "min", Value: minF}))
 		}
-		var max *float64 = nil
-		maxF, err := strconv.ParseFloat(value[7], 64)
+		maxF, err := strconv.ParseFloat(perfSlice[7], 64)
 		if err == nil {
-			max = &maxF
+			fields = append(fields, &(protocol.Field{Key: "max", Value: maxF}))
 		}
-		perf := PerfData{
-			Key:   value[1],
-			Value: v,
-			UOM:   uom,
-			Warn:  warn,
-			Crit:  crit,
-			Min:   min,
-			Max:   max,
+
+		metric := Metric{
+			name:      "metric",
+			fields:    fields,
+			tags:      tags,
+			timestamp: timestamp,
 		}
-		ret = append(ret, perf)
+
+		_, err = encoder.Encode(metric)
+		if err != nil {
+			return err
+		}
 	}
-	return ret
+	return nil
 }
 
 type Metric struct {
