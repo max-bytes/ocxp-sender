@@ -8,9 +8,11 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	protocol "github.com/influxdata/line-protocol"
@@ -19,7 +21,7 @@ import (
 )
 
 const ExchangeName = "naemon"
-const DaemonAddress = "127.0.0.1:55550"
+const DaemonAddress = "/tmp/ocxp-sender-socket"
 
 func main() {
 	var host string
@@ -40,7 +42,7 @@ func main() {
 
 	if daemonize { // run as daemon
 		fmt.Println("Running daemon...")
-		runDaemon(DaemonAddress, amqpURL, 6*time.Minute)
+		runDaemon(amqpURL, 6*time.Minute)
 		fmt.Println("Stopping daemon")
 	} else { // run as regular program that sends its metrics to the daemon
 		if !isFlagPassed("host") {
@@ -64,7 +66,7 @@ func main() {
 			fmt.Println("Sending:")
 			fmt.Println(b.String())
 
-			conn, err := net.Dial("tcp", DaemonAddress)
+			conn, err := net.Dial("unix", DaemonAddress)
 			if err == nil { // try to connect to already running daemon
 				defer conn.Close()
 				// write to socket
@@ -76,7 +78,7 @@ func main() {
 				// spawn daemon
 				binary, err := exec.LookPath(os.Args[0])
 				failOnError(err, "Failed to lookup binary")
-				_, err = os.StartProcess(binary, []string{binary, "-d", "-u", amqpURL}, &os.ProcAttr{Dir: "", Env: nil,
+				_, _ = os.StartProcess(binary, []string{binary, "-d", "-u", amqpURL}, &os.ProcAttr{Dir: "", Env: nil,
 					Files: []*os.File{nil, nil, nil}, Sys: nil})
 
 				// we don't fail when daemon start failed, because maybe another run has started it successfully
@@ -86,7 +88,7 @@ func main() {
 				time.Sleep(500 * time.Millisecond)
 
 				// try to connect and send one more time
-				conn, err := net.Dial("tcp", DaemonAddress)
+				conn, err := net.Dial("unix", DaemonAddress)
 				failOnError(err, "Failed to connect to daemon")
 				defer conn.Close()
 				_, err = conn.Write(b.Bytes())
@@ -96,12 +98,26 @@ func main() {
 	}
 }
 
-func runDaemon(listenAddress string, amqpURL string, inactivityTimeout time.Duration) {
+func removeSocket() {
+	log.Println("Removing socket")
+	_ = os.RemoveAll(DaemonAddress)
+}
 
-	// setup TCP server
-	connection, err := net.Listen("tcp", listenAddress)
-	failOnError(err, "Failed to listen on port")
+func runDaemon(amqpURL string, inactivityTimeout time.Duration) {
+	// setup server connection
+	connection, err := net.Listen("unix", DaemonAddress)
+	failOnError(err, fmt.Sprintf("Failed to listen on %s", DaemonAddress))
 	defer connection.Close()
+	defer removeSocket()
+
+	// we try everything we can to make sure the socket is removed again on exit
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-signals
+		removeSocket()
+		os.Exit(0)
+	}()
 
 	// setup amqp connection
 	amqpConnection, err := amqp.Dial(amqpURL)
@@ -143,7 +159,7 @@ L:
 		select {
 		case err = <-doneChan:
 			failOnError(err, "Encountered error while processing message")
-		case _ = <-heartbeatChan: // heartbeat encountered, continue loop and restart select
+		case <-heartbeatChan: // heartbeat encountered, continue loop and restart select
 		case <-time.After(inactivityTimeout):
 			fmt.Println("Reached inactivity timeout, closing...")
 			break L
