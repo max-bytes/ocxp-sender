@@ -8,9 +8,12 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"regexp"
+	"runtime/pprof"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	protocol "github.com/influxdata/line-protocol"
@@ -29,6 +32,7 @@ func main() {
 	var perfData string
 	var daemonize bool
 	var amqpURL string
+	var cpuprofile string
 	flag.VarP(&variableFlags, "var", "v", "variables in the form \"name=value\" (multiple -v allowed); get forwarded as tags")
 	flag.StringVarP(&host, "host", "h", "", "Name of host")
 	flag.StringVarP(&service, "service", "s", "", "Name of service")
@@ -36,9 +40,22 @@ func main() {
 	flag.StringVarP(&perfData, "perfdata", "p", "", "Performance data")
 	flag.StringVarP(&amqpURL, "amqp-url", "u", "amqp://localhost:5672", "URL of the AMQP (e.g. RabbitMQ) server to send the data to")
 	flag.BoolVarP(&daemonize, "daemonize", "d", false, "Whether or not to spawn a daemon process that runs infinitely")
+	flag.StringVarP(&cpuprofile, "cpuprofile", "", "", "write cpu profile to `file`")
 	flag.Parse()
 
 	if daemonize { // run as daemon
+		if cpuprofile != "" {
+			f, err := os.Create(cpuprofile)
+			if err != nil {
+				log.Fatal("could not create CPU profile: ", err)
+			}
+			defer f.Close() // error handling omitted for example
+			if err := pprof.StartCPUProfile(f); err != nil {
+				log.Fatal("could not start CPU profile: ", err)
+			}
+			defer pprof.StopCPUProfile()
+		}
+
 		fmt.Println("Running daemon...")
 		runDaemon(DaemonAddress, amqpURL, 6*time.Minute)
 		fmt.Println("Stopping daemon")
@@ -61,8 +78,8 @@ func main() {
 
 		// only publish if there are actually metrics/perfdata
 		if b.Len() > 0 {
-			fmt.Println("Sending:")
-			fmt.Println(b.String())
+			// fmt.Println("Sending:")
+			// fmt.Println(b.String())
 
 			conn, err := net.Dial("tcp", DaemonAddress)
 			if err == nil { // try to connect to already running daemon
@@ -76,7 +93,7 @@ func main() {
 				// spawn daemon
 				binary, err := exec.LookPath(os.Args[0])
 				failOnError(err, "Failed to lookup binary")
-				_, err = os.StartProcess(binary, []string{binary, "-d", "-u", amqpURL}, &os.ProcAttr{Dir: "", Env: nil,
+				_, _ = os.StartProcess(binary, []string{binary, "-d", "-u", amqpURL}, &os.ProcAttr{Dir: "", Env: nil,
 					Files: []*os.File{nil, nil, nil}, Sys: nil})
 
 				// we don't fail when daemon start failed, because maybe another run has started it successfully
@@ -121,33 +138,39 @@ func runDaemon(listenAddress string, amqpURL string, inactivityTimeout time.Dura
 	)
 	failOnError(err, "Failed to declare an exchange")
 
-	doneChan := make(chan error, 1)
+	errorChan := make(chan error, 1)
 	heartbeatChan := make(chan bool, 1)
 
-	go func() {
+	// signal handling to allow graceful exit
+	stopSignal := make(chan os.Signal, 1)
+	signal.Notify(stopSignal, os.Interrupt, syscall.SIGTERM)
 
+	go func() {
 		for {
 			conn, err := connection.Accept()
 			if err != nil {
-				doneChan <- err
+				errorChan <- err
 				return
 			}
 
-			go handleClient(conn, channel, doneChan, heartbeatChan)
+			go handleClient(conn, channel, errorChan, heartbeatChan)
 		}
 	}()
-
-	// TODO: add signal handling to allow graceful exit
 L:
 	for {
 		select {
-		case err = <-doneChan:
-			failOnError(err, "Encountered error while processing message")
-		case _ = <-heartbeatChan: // heartbeat encountered, continue loop and restart select
+		case err = <-errorChan:
+			fmt.Printf("Encountered error while processing message: %v", err)
+			break L
+		case <-heartbeatChan: // heartbeat encountered, continue loop and restart select
 		case <-time.After(inactivityTimeout):
 			fmt.Println("Reached inactivity timeout, closing...")
 			break L
+		case <-stopSignal:
+			fmt.Println("Received stop signal, closing...")
+			break L
 		}
+
 	}
 }
 
