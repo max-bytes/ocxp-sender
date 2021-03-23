@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"regexp"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"syscall"
@@ -31,6 +32,7 @@ func main() {
 	var perfData string
 	var daemonize bool
 	var amqpURL string
+	var cpuprofile string
 	flag.VarP(&variableFlags, "var", "v", "variables in the form \"name=value\" (multiple -v allowed); get forwarded as tags")
 	flag.StringVarP(&host, "host", "h", "", "Name of host")
 	flag.StringVarP(&service, "service", "s", "", "Name of service")
@@ -38,11 +40,25 @@ func main() {
 	flag.StringVarP(&perfData, "perfdata", "p", "", "Performance data")
 	flag.StringVarP(&amqpURL, "amqp-url", "u", "amqp://localhost:5672", "URL of the AMQP (e.g. RabbitMQ) server to send the data to")
 	flag.BoolVarP(&daemonize, "daemonize", "d", false, "Whether or not to spawn a daemon process that runs infinitely")
+	flag.StringVarP(&cpuprofile, "cpuprofile", "", "", "write cpu profile to `file`")
 	flag.Parse()
 
 	if daemonize { // run as daemon
+
+		if cpuprofile != "" {
+			f, err := os.Create(cpuprofile)
+			if err != nil {
+				log.Fatal("could not create CPU profile: ", err)
+			}
+			defer f.Close() // error handling omitted for example
+			if err := pprof.StartCPUProfile(f); err != nil {
+				log.Fatal("could not start CPU profile: ", err)
+			}
+			defer pprof.StopCPUProfile()
+		}
+
 		fmt.Println("Running daemon...")
-		runDaemon(amqpURL, 6*time.Minute)
+		runDaemon(amqpURL, 6*time.Second)
 		fmt.Println("Stopping daemon")
 	} else { // run as regular program that sends its metrics to the daemon
 		if !isFlagPassed("host") {
@@ -328,6 +344,7 @@ func (m Metric) FieldList() []*protocol.Field {
 
 func failOnError(err error, msg string) {
 	if err != nil {
+		removeSocket() // HACK
 		log.Fatalf("%s: %s", msg, err)
 	}
 }
