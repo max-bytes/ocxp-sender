@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"log"
@@ -10,9 +9,11 @@ import (
 	"os/exec"
 	"os/signal"
 	"regexp"
+	"runtime"
 	"runtime/pprof"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -33,6 +34,7 @@ func main() {
 	var daemonize bool
 	var amqpURL string
 	var cpuprofile string
+	var memprofile string
 	flag.VarP(&variableFlags, "var", "v", "variables in the form \"name=value\" (multiple -v allowed); get forwarded as tags")
 	flag.StringVarP(&host, "host", "h", "", "Name of host")
 	flag.StringVarP(&service, "service", "s", "", "Name of service")
@@ -41,6 +43,7 @@ func main() {
 	flag.StringVarP(&amqpURL, "amqp-url", "u", "amqp://localhost:5672", "URL of the AMQP (e.g. RabbitMQ) server to send the data to")
 	flag.BoolVarP(&daemonize, "daemonize", "d", false, "Whether or not to spawn a daemon process that runs infinitely")
 	flag.StringVarP(&cpuprofile, "cpuprofile", "", "", "write cpu profile to `file`")
+	flag.StringVarP(&memprofile, "memprofile", "", "", "write memory profile to `file`")
 	flag.Parse()
 
 	if daemonize { // run as daemon
@@ -59,6 +62,19 @@ func main() {
 		fmt.Println("Running daemon...")
 		runDaemon(DaemonAddress, amqpURL, 6*time.Minute)
 		fmt.Println("Stopping daemon")
+
+		if memprofile != "" {
+			f, err := os.Create(memprofile)
+			if err != nil {
+				log.Fatal("could not create memory profile: ", err)
+			}
+			defer f.Close() // error handling omitted for example
+			runtime.GC()    // get up-to-date statistics
+			if err := pprof.WriteHeapProfile(f); err != nil {
+				log.Fatal("could not write memory profile: ", err)
+			}
+		}
+
 	} else { // run as regular program that sends its metrics to the daemon
 		if !isFlagPassed("host") {
 			fail("host name not set")
@@ -156,14 +172,17 @@ func runDaemon(listenAddress string, amqpURL string, inactivityTimeout time.Dura
 			go handleClient(conn, channel, errorChan, heartbeatChan)
 		}
 	}()
+
+	inactivityTimer := time.NewTimer(inactivityTimeout)
 L:
 	for {
+		inactivityTimer.Reset(inactivityTimeout)
 		select {
 		case err = <-errorChan:
 			fmt.Printf("Encountered error while processing message: %v", err)
 			break L
 		case <-heartbeatChan: // heartbeat encountered, continue loop and restart select
-		case <-time.After(inactivityTimeout):
+		case <-inactivityTimer.C:
 			fmt.Println("Reached inactivity timeout, closing...")
 			break L
 		case <-stopSignal:
@@ -174,18 +193,31 @@ L:
 	}
 }
 
+const maxBufferSize = 16384
+
+type Buffer struct {
+	B []byte
+}
+
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		b := new(Buffer)
+		b.B = make([]byte, maxBufferSize)
+		return b
+	},
+}
+
 func handleClient(conn net.Conn, channel *amqp.Channel, doneChan chan error, heartbeatChan chan bool) {
 	defer conn.Close()
 
-	const maxBufferSize = 16384
-	buffer := make([]byte, maxBufferSize)
-	n, err := bufio.NewReaderSize(conn, maxBufferSize).Read(buffer)
+	buffer := bufPool.Get().(*Buffer)
+	n, err := conn.Read(buffer.B)
 	if err != nil {
 		doneChan <- err
 		return
 	}
 
-	received := buffer[:n]
+	received := buffer.B[:n]
 
 	// NOTE: we assume that amqp.Channel and its publish method are thread safe and one channel can be used in multiple goroutines
 	// the documentation is not 100% clear on this, but there seems to be a proper lock/mutex in place:
@@ -204,6 +236,8 @@ func handleClient(conn net.Conn, channel *amqp.Channel, doneChan chan error, hea
 		doneChan <- err
 		return
 	}
+
+	bufPool.Put(buffer)
 
 	heartbeatChan <- true
 }
