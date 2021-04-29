@@ -41,9 +41,9 @@ Additionally, the check result state is converted to an output line too.
 Example output, from a host check result:
 ```
 // Syntax: <measurement>[,<tag_key>=<tag_value>[,<tag_key>=<tag_value>]] <field_key>=<field_value>[,<field_key>=<field_value>] [<timestamp>]
-value,host=abc.com,label=rta,service=CI-Alive,uom=ms,variable1=value1 value=1.238,warn=3000,crit=5000,min=0 1601368660199853426
-value,host=abc.com,label=pl,service=CI-Alive,uom=%,variable1=value1 value=0,warn=80,crit=100,min=0 1601368660199886231
-value,host=abc.com,label=state,service=CI-Alive,variable1=value1 value=0i 1601368660199896617
+metric,host=abc.com,label=rta,service=CI-Alive,uom=ms,variable1=value1 value=1.238,warn=3000,crit=5000,min=0 1601368660199853426
+metric,host=abc.com,label=pl,service=CI-Alive,uom=%,variable1=value1 value=0,warn=80,crit=100,min=0 1601368660199886231
+state,host=abc.com,service=CI-Alive,variable1=value1 value=0i,output="Ping OK!" 1601368660199896617
 ```
 
 # RabbitMQ
