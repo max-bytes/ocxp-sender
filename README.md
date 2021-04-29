@@ -15,6 +15,7 @@ ocxp-sender includes the following commandline parameters:
 | name of host | &#x2011;h<br>--host | false | Hostname for which the performance data is reported |
 | name of service | -s<br>--service | false | Name of the service for which the performance data is reported |
 | state | -t<br>--state | false | (Integer); state of the service, according to Naemon standard: https://www.naemon.org/documentation/usersguide/pluginapi.html#return_code |
+| output | -o<br>--output | true | textual check result; if set, gets added to the state metric line as a field (key: "output") |
 | performance data | -p<br>--perfdata | false | The performance data as reported by naemon |
 | AMQP URL | -u<br>--amqp-url | true | URL of the target AMQP (e.g. RabbitMQ), where the data should be sent to, defaults to amqp://localhost:5672 |
 | variables | -v<br>--var | true | Variables in the form "name=value" (multiple -v allowed); get forwarded as tags |
@@ -52,11 +53,11 @@ After transforming the incoming data into Influx Line Protocol lines, it sends t
 /etc/naemon/conf.d/commands/commands.cfg:
 ```
 define command {
-command_name ocsp_handler /data/ocxp-sender/ocxp-sender -h '$HOSTNAME$' -s '$SERVICEDESC$' -t $SERVICESTATEID$ -p '$SERVICEPERFDATA$' -v tag1=value1
+command_name ocsp_handler /data/ocxp-sender/ocxp-sender -h '$HOSTNAME$' -s '$SERVICEDESC$' -t $SERVICESTATEID$ -p '$SERVICEPERFDATA$' -o '$SERVICEOUTPUT$' -v tag1=value1
 }
 define command {
 command_name ochp_handler
-command_line /data/ocxp-sender/ocxp-sender -h '$HOSTNAME$' -s 'CI-Alive' -t $HOSTSTATEID$ -p '$HOSTPERFDATA$' -v tag1=value1
+command_line /data/ocxp-sender/ocxp-sender -h '$HOSTNAME$' -s 'CI-Alive' -t $HOSTSTATEID$ -p '$HOSTPERFDATA$' -o '$HOSTOUTPUT$' -v tag1=value1
 }
 ```
 
