@@ -28,6 +28,7 @@ const DaemonAddress = "127.0.0.1:55550"
 func main() {
 	var host string
 	var service string
+	var output string
 	var state int
 	var variableFlags variableFlags
 	var perfData string
@@ -39,6 +40,7 @@ func main() {
 	flag.StringVarP(&host, "host", "h", "", "Name of host")
 	flag.StringVarP(&service, "service", "s", "", "Name of service")
 	flag.IntVarP(&state, "state", "t", 0, "State of the check")
+	flag.StringVarP(&output, "output", "o", "", "Output of the check result (optional)")
 	flag.StringVarP(&perfData, "perfdata", "p", "", "Performance data")
 	flag.StringVarP(&amqpURL, "amqp-url", "u", "amqp://localhost:5672", "URL of the AMQP (e.g. RabbitMQ) server to send the data to")
 	flag.BoolVarP(&daemonize, "daemonize", "d", false, "Whether or not to spawn a daemon process that runs infinitely")
@@ -89,13 +91,13 @@ func main() {
 			fail("Performance data not set")
 		}
 
-		b, err := parse(host, service, state, variableFlags, perfData, time.Now())
+		b, err := parse(host, service, state, output, variableFlags, perfData, time.Now())
 		failOnError(err, "Failed to parse inputs")
 
 		// only publish if there are actually metrics/perfdata
 		if b.Len() > 0 {
 			// fmt.Println("Sending:")
-			// fmt.Println(b.String())
+			//fmt.Println(b.String())
 
 			conn, err := net.Dial("tcp", DaemonAddress)
 			if err == nil { // try to connect to already running daemon
@@ -242,7 +244,7 @@ func handleClient(conn net.Conn, channel *amqp.Channel, doneChan chan error, hea
 	heartbeatChan <- true
 }
 
-func parse(host string, service string, state int, variableFlags variableFlags, perfData string, timestamp time.Time) (*bytes.Buffer, error) {
+func parse(host string, service string, state int, output string, variableFlags variableFlags, perfData string, timestamp time.Time) (*bytes.Buffer, error) {
 	// create tags from variables
 	tags := make([]*protocol.Tag, 0, len(variableFlags)+2)
 	tags = append(tags, &(protocol.Tag{Key: "host", Value: host}))
@@ -264,7 +266,7 @@ func parse(host string, service string, state int, variableFlags variableFlags, 
 	}
 
 	// add state as its own metric, with the state encoded as an integer (0 to 3)
-	stateMetric := state2metric("state", state, tags, timestamp)
+	stateMetric := state2metric("state", state, output, tags, timestamp)
 	_, err = encoder.Encode(stateMetric)
 	if err != nil {
 		return nil, err
@@ -273,9 +275,13 @@ func parse(host string, service string, state int, variableFlags variableFlags, 
 	return &b, nil
 }
 
-func state2metric(metricName string, state int, addedTags []*protocol.Tag, timestamp time.Time) Metric {
+func state2metric(metricName string, state int, output string, addedTags []*protocol.Tag, timestamp time.Time) Metric {
 	var fields = []*protocol.Field{
 		&(protocol.Field{Key: "value", Value: state}),
+	}
+
+	if len(output) > 0 {
+		fields = append(fields, &(protocol.Field{Key: "output", Value: output}))
 	}
 
 	metric := Metric{
