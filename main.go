@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -195,7 +196,7 @@ L:
 	}
 }
 
-const maxBufferSize = 16384
+const maxBufferSize = 163840
 
 type Buffer struct {
 	B []byte
@@ -213,18 +214,28 @@ func handleClient(conn net.Conn, channel *amqp.Channel, doneChan chan error, hea
 	defer conn.Close()
 
 	buffer := bufPool.Get().(*Buffer)
-	n, err := conn.Read(buffer.B)
-	if err != nil {
-		doneChan <- err
-		return
+	tmp := bufPool.Get().(*Buffer)
+	n := 0
+	for {
+		tmpN, err := conn.Read(tmp.B)
+		if err != nil {
+			if err != io.EOF {
+				doneChan <- err
+				return
+			}
+			break
+		}
+		buffer.B = append(buffer.B, tmp.B[:tmpN]...)
+		n += tmpN
 	}
+	bufPool.Put(tmp)
 
 	received := buffer.B[:n]
 
 	// NOTE: we assume that amqp.Channel and its publish method are thread safe and one channel can be used in multiple goroutines
 	// the documentation is not 100% clear on this, but there seems to be a proper lock/mutex in place:
 	// https://github.com/streadway/amqp/blob/master/channel.go#L1331
-	err = channel.Publish(
+	err := channel.Publish(
 		ExchangeName, // exchange
 		"",           // routing key
 		false,        // mandatory
