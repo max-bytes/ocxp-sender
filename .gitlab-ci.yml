@@ -1,3 +1,5 @@
+# DEPRECATED! TODO: remove
+
 stages:
  - build
  - package
