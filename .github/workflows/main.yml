@@ -1,6 +1,5 @@
 name: build
 
-
 on:
   push:
     tags:
@@ -25,23 +24,9 @@ jobs:
           go-bin-rpm generate -o ocxp-sender.rpm --version ${{ env.VERSION }} --arch amd64
           ls -lah ocxp-sender.rpm
 
-      - uses: ncipollo/release-action@v1
+      - name: Create release
+        uses: ncipollo/release-action@v1
         with:
           artifacts: "ocxp-sender.rpm"
           omitBody: true
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      # - name: Create a Release
-      #   uses: elgohr/Github-Release-Action@master
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-      #   with:
-      #     args: "Release version ${{ env.VERSION }}"
-
-      # - name: publish RPM, add to release
-      #   uses: skx/github-action-publish-binaries@master
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   with:
-      #     args: 'ocxp-sender.rpm'
-
