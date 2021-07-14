@@ -25,7 +25,14 @@ jobs:
           go-bin-rpm generate -o ocxp-sender.rpm --version ${{ env.VERSION }} --arch amd64
           ls -lah ocxp-sender.rpm
 
-      - name: publish RPM
+      - name: Create a Release
+        uses: elgohr/Github-Release-Action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        with:
+          args: "Release version ${{ env.VERSION }}"
+
+      - name: publish RPM, add to release
         uses: skx/github-action-publish-binaries@master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
