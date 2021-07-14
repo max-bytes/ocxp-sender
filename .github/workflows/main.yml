@@ -19,7 +19,7 @@ jobs:
         
       - name: Build RPM
         run: |
-          echo "Building version ${{ env.VERSION }}
+          echo "Building version ${{ env.VERSION }}"
           GOOS=linux GOARCH=amd64 go build -o bin/ocxp-sender
           sed -i "s/\!release\!/${{ github.run_id }}/" rpm.json
           go-bin-rpm generate -o ocxp-sender.rpm --version ${{ env.VERSION }} --arch amd64
