@@ -68,3 +68,9 @@ ocsp_command=ocsp_handler
 obsess_over_hosts=1
 ochp_command=ochp_handler
 ```
+
+# License
+
+This project is licensed under the **Apache 2.0 license**.
+
+See [LICENSE](LICENSE) for more information.
