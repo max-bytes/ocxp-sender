@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-20.04
-    container: maxbytes1/go-build:0.1.0
+    container: maxbytes1/go-build:0.1.1
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
